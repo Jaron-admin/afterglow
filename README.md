@@ -32,6 +32,10 @@ Afterglow turns an old Android phone into a local camera, with RTSP/H.264 + AAC,
 仅开启对应输出模式时，相应地址才可用。手机之间也可以从「附近设备」进入查看。
 [Home Assistant 接入说明](homeassistant/README.md)。
 
+## 1.3.1 的改动
+
+- 修复 RTSP 开始播放确认与首帧入队之间的竞态，补充确定性回归测试。
+
 ## 1.3.0 的改动
 
 - 手机和系统开放的外置 SD 卡应用目录录像，支持连续与事件模式、本地回放、导出、锁定和删除。
@@ -110,7 +114,7 @@ Linux/macOS 用 `./gradlew assembleDebug lintDebug`。产物：
 .\build-apk.ps1 -Sdk F:\SDK -Jdk F:\SDK\jdk-17
 ```
 
-输出 `dist/Afterglow-1.3.0.apk`。使用本机已有的 Android debug keystore；
+输出 `dist/Afterglow-1.3.1.apk`。使用本机已有的 Android debug keystore；
 若没有，先运行一次 Gradle debug 构建。签名文件、本机路径和构建目录均被 Git 忽略。
 自己的正式发布应使用自行管理的签名密钥。CI 的 debug APK 与本机 APK 可能使用不同签名，不能互相直接覆盖升级。
 

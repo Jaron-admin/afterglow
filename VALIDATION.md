@@ -1,4 +1,4 @@
-# Validation — Afterglow 1.3.0
+# Validation — Afterglow 1.3.1
 
 Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
 
@@ -14,7 +14,7 @@ Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
   of nonzero PCM; FFmpeg warning/error logs were empty. This uses the production
   RTSP server and Annex-B splitter. Joining a live GOP explains fewer than 75 video frames.
 - Gradle `assembleDebug lintDebug`: successful, 0 errors and 99 warnings.
-- `build-apk.ps1`: successful; version 1.3.0 / code 5, minSdk 19, targetSdk 33,
+- `build-apk.ps1`: version 1.3.1 / code 6, minSdk 19, targetSdk 33,
   package `com.oldphone.ipcam`. v1/v2/v3 signatures verified; certificate remains
   `dd4508eb3d4c3698c4be1c828b1171c250f0820cbdc5caf2cb6a8e9198f7c239`.
 - Independent reviews identified full-disk management being gated on a write probe,
@@ -26,7 +26,11 @@ No physical camera or microphone was opened during these tests. Native Android
 MediaMuxer output, the built-in Android player, real sensor/microphone latency and
 long-term clock drift are not established by the JVM or FFmpeg transport tests.
 
-## Device acceptance — 1.3.0
+The first cloud run for 1.3.0 exposed a PLAY response/first-frame acceptance race
+that local scheduling had not triggered. Version 1.3.1 adds a deterministic
+response-flush latch regression for initial PLAY and resumed playback.
+
+## Device acceptance — 1.3.x
 
 1. Upgrade with the existing signature; verify recording and microphone remain opt-in.
 2. Record continuous MP4 with microphone off/on, stop normally, and play/export completed

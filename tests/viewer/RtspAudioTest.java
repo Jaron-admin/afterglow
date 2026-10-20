@@ -2,21 +2,96 @@ package com.oldphone.ipcam;
 
 import java.io.*;
 import java.net.*;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Real loopback sockets exercise signaling, routing and packet bytes without Android. */
 public final class RtspAudioTest {
     static final byte[] AAC = new byte[]{10, 20, 30, 40, 50};
     static final byte[] VIDEO = new byte[]{0, 0, 0, 1, 0x61, 11, 22};
     public static void main(String[] args) throws Exception {
+        playAcknowledgementAcceptsImmediateFrames();
         disabledAudioAndVideoCompatibility();
         tcpTracks(false);
         tcpTracks(true);
         audioOnlyAndPauseResume();
         udpTracks();
         restartDisposesTracks();
-        System.out.println("PASS: RTSP audio SDP; both SETUP orders; audio-only/video-only; independent TCP/UDP tracks; AAC AU fragmentation; shared RTCP clock/CNAME; pause/resume; restart disposal");
+        System.out.println("PASS: PLAY acknowledgement accepts immediate audio/video frames; RTSP audio SDP; both SETUP orders; audio-only/video-only; independent TCP/UDP tracks; AAC AU fragmentation; shared RTCP clock/CNAME; pause/resume; restart disposal");
+    }
+
+    static void playAcknowledgementAcceptsImmediateFrames() throws Exception {
+        RtspServer server = server(true);
+        FlushGate gate = null;
+        try (Peer peer = new Peer(server)) {
+            peer.setupTcp(0, 0, 1);
+            peer.setupTcp(1, 2, 3);
+            Field clientsField = RtspServer.class.getDeclaredField("clients");
+            clientsField.setAccessible(true);
+            Object client = ((List<?>) clientsField.get(server)).get(0);
+            Field outField = client.getClass().getDeclaredField("out");
+            outField.setAccessible(true);
+            // Exercise first PLAY and an already-created sender resuming from PAUSE.
+            for (int attempt = 0; attempt < 2; attempt++) {
+                if (attempt > 0) peer.request("PAUSE", "", "");
+                OutputStream original;
+                synchronized (client) {
+                    original = (OutputStream) outField.get(client);
+                    gate = new FlushGate(original);
+                    outField.set(client, gate);
+                }
+                check(peer.request("PLAY", "", "").status == 200, "PLAY acknowledgement");
+                check(gate.responseFlushed.await(2, TimeUnit.SECONDS), "PLAY flush must enter deterministic gate");
+                if (attempt == 0) check(peer.pending.isEmpty(), "PLAY response precedes all media");
+                peer.pending.clear();
+                long pts = System.nanoTime() / 1000;
+                // The acknowledgement is already on the client socket, but the
+                // server is still inside respond(). No scheduling sleep can mask this.
+                server.pushFrame(VIDEO, pts, false);
+                audio(server, AAC, pts);
+                gate.allowFlushReturn.countDown();
+                try {
+                    check((peer.packet(0).data[1] & 127) == 96, "first video after PLAY");
+                    check((peer.packet(2).data[1] & 127) == 97, "first audio after PLAY");
+                } catch (SocketTimeoutException missing) {
+                    throw new AssertionError("PLAY acknowledged before accepting the immediate first audio/video frames", missing);
+                } finally {
+                    peer.socket.setSoTimeout(3000);
+                }
+                synchronized (client) { outField.set(client, original); }
+            }
+        } finally {
+            if (gate != null) gate.allowFlushReturn.countDown();
+            server.stop();
+        }
+    }
+
+    /** Let the peer observe the ACK, then keep respond() suspended until the test queues media. */
+    static final class FlushGate extends OutputStream {
+        final OutputStream delegate;
+        final AtomicBoolean firstFlush = new AtomicBoolean(true);
+        final CountDownLatch responseFlushed = new CountDownLatch(1);
+        final CountDownLatch allowFlushReturn = new CountDownLatch(1);
+        FlushGate(OutputStream delegate) { this.delegate = delegate; }
+        @Override public void write(int value) throws IOException { delegate.write(value); }
+        @Override public void write(byte[] bytes, int offset, int length) throws IOException {
+            delegate.write(bytes, offset, length);
+        }
+        @Override public void flush() throws IOException {
+            delegate.flush();
+            if (!firstFlush.compareAndSet(true, false)) return;
+            responseFlushed.countDown();
+            try {
+                if (!allowFlushReturn.await(5, TimeUnit.SECONDS)) throw new IOException("PLAY test gate expired");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("PLAY test gate interrupted", interrupted);
+            }
+        }
     }
 
     static RtspServer server(boolean audio) throws Exception {
@@ -233,11 +308,17 @@ public final class RtspAudioTest {
         }
         Packet packet(int channel) throws Exception {
             for (int i=0; i<pending.size(); i++) if (pending.get(i).channel == channel) return pending.remove(i);
-            for (int i=0; i<50; i++) {
-                check(in.read() == '$', "expected interleaved media"); Packet packet = readPacket();
-                if (packet.channel == channel) return packet; pending.add(packet);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            try {
+                while (System.nanoTime() < deadline) {
+                    socket.setSoTimeout((int)Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+                    check(in.read() == '$', "expected interleaved media"); Packet packet = readPacket();
+                    if (packet.channel == channel) return packet; pending.add(packet);
+                }
+                throw new SocketTimeoutException("requested channel not received within 3 seconds");
+            } finally {
+                socket.setSoTimeout(3000);
             }
-            throw new AssertionError("requested channel not received");
         }
         Packet readPacket() throws Exception { int channel=in.read(), high=in.read(), low=in.read(); return new Packet(channel, bytes(in, high*256+low)); }
         public void close() throws IOException { socket.close(); }

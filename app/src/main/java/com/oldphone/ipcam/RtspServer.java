@@ -250,8 +250,11 @@ public final class RtspServer {
                         info.append("url=").append(track.url).append(";seq=").append(track.seq)
                                 .append(";rtptime=").append(track.timestamp(now) & 0xffffffffL);
                     }
-                    respond(cseq, "Session: " + sessionId + "\r\nRange: npt=0.000-\r\nRTP-Info: " + info + "\r\n", null);
+                    // Accept frames before the peer can see the PLAY acknowledgement.
+                    // Keeping the output lock held still guarantees the whole RTSP
+                    // response precedes RTP/RTCP, including a resumed sender.
                     playing = true;
+                    respond(cseq, "Session: " + sessionId + "\r\nRange: npt=0.000-\r\nRTP-Info: " + info + "\r\n", null);
                 }
                 startWorkers();
             } else if ("PAUSE".equalsIgnoreCase(method)) {
