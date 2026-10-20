@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 if (!$JavaHome) { throw 'Set JAVA_HOME or pass -JavaHome with a JDK 17 directory.' }
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    & "$PSScriptRoot\output\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
+    if ($LASTEXITCODE -ne 0) { throw 'Output selection tests failed.' }
     & "$PSScriptRoot\geometry\run.ps1" -JavaHome $JavaHome
     if ($LASTEXITCODE -ne 0) { throw 'Geometry tests failed.' }
     & "$PSScriptRoot\camera\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar

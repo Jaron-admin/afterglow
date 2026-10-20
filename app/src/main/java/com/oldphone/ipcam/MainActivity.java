@@ -19,6 +19,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Surface;
 import android.view.Gravity;
 import android.view.inputmethod.EditorInfo;
@@ -30,14 +31,13 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -81,8 +81,15 @@ public final class MainActivity extends Activity {
     private View llPreviewEmpty;
     private TextView tvPreviewEmptyTitle;
     private TextView tvPreviewEmptyHint;
+    private LinearLayout llBody;
+    private LinearLayout llContent;
+    private LinearLayout previewPanel;
+    private View settingsPanel;
+    private ScrollView svMain;
+    private ScrollView svSettings;
 
     private Spinner spResolution;
+    private Spinner spAspectRatio;
     private Spinner spFps;
     private Spinner spBitrate;
     private Spinner spMode;
@@ -90,12 +97,14 @@ public final class MainActivity extends Activity {
     private Spinner spOutputLayout;
     private CheckBox cbOrientationLock;
     private View llResolution;
+    private View llAspectRatio;
     private View llCustomSize;
     private EditText etOutputWidth;
     private EditText etOutputHeight;
     private final List<CameraCatalog.Entry> cameraEntries = new ArrayList<CameraCatalog.Entry>();
     private final List<String> cameraKeys = new ArrayList<String>();
     private final List<int[]> outputSizes = new ArrayList<int[]>();
+    private final List<OutputSizeOptions.Ratio> outputRatios = new ArrayList<OutputSizeOptions.Ratio>();
     private boolean loadingCameras;
     private int pendingCalibrationDegrees = -1;
     private CameraCatalog.Entry lastActiveCamera;
@@ -226,6 +235,7 @@ public final class MainActivity extends Activity {
         bindViews();
         setupSpinners();
         setupListeners();
+        arrangePanes();
         refreshAddresses();
 
         decodeThread = new HandlerThread("preview-decode");
@@ -398,8 +408,23 @@ public final class MainActivity extends Activity {
         llPreviewEmpty = findViewById(R.id.llPreviewEmpty);
         tvPreviewEmptyTitle = (TextView) findViewById(R.id.tvPreviewEmptyTitle);
         tvPreviewEmptyHint = (TextView) findViewById(R.id.tvPreviewEmptyHint);
+        llBody = (LinearLayout) findViewById(R.id.llBody);
+        llContent = (LinearLayout) findViewById(R.id.llContent);
+        previewPanel = (LinearLayout) findViewById(R.id.previewPanel);
+        settingsPanel = findViewById(R.id.settingsPanel);
+        svMain = (ScrollView) findViewById(R.id.svMain);
+        svSettings = (ScrollView) findViewById(R.id.svSettings);
+        svMain.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
+                                                 int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                    resizePreview(displayedGeometry);
+                }
+            }
+        });
 
         spResolution = (Spinner) findViewById(R.id.spResolution);
+        spAspectRatio = (Spinner) findViewById(R.id.spAspectRatio);
         spFps = (Spinner) findViewById(R.id.spFps);
         spBitrate = (Spinner) findViewById(R.id.spBitrate);
         spMode = (Spinner) findViewById(R.id.spMode);
@@ -407,6 +432,7 @@ public final class MainActivity extends Activity {
         spOutputLayout = (Spinner) findViewById(R.id.spOutputLayout);
         cbOrientationLock = (CheckBox) findViewById(R.id.cbOrientationLock);
         llResolution = findViewById(R.id.llResolution);
+        llAspectRatio = findViewById(R.id.llAspectRatio);
         llCustomSize = findViewById(R.id.llCustomSize);
         etOutputWidth = (EditText) findViewById(R.id.etOutputWidth);
         etOutputHeight = (EditText) findViewById(R.id.etOutputHeight);
@@ -547,24 +573,24 @@ public final class MainActivity extends Activity {
         if (spResolution == null) return;
         boolean wasSuppressed = suppressListener;
         suppressListener = true;
-        outputSizes.clear();
-        addOutputSize(640, 480);
-        addOutputSize(1280, 720);
-        addOutputSize(1920, 1080);
         CameraCatalog.Entry camera = selectedCamera();
-        if (camera != null && camera.sizes != null) {
-            for (int[] size : camera.sizes) {
-                if (size != null && size.length >= 2) addOutputSize(size[0], size[1]);
-            }
+        int[][] cameraSizes = camera == null ? null : camera.sizes;
+        int width = Prefs.outputWidth();
+        int height = Prefs.outputHeight();
+        int layout = Prefs.outputLayout();
+        OutputSizeOptions.Ratio ratio = OutputSizeOptions.ratioOf(width, height);
+        outputRatios.clear();
+        outputRatios.addAll(OutputSizeOptions.ratios(cameraSizes, width, height));
+        List<String> ratioLabels = new ArrayList<String>();
+        int selectedRatio = 0;
+        for (int i = 0; i < outputRatios.size(); i++) {
+            OutputSizeOptions.Ratio option = outputRatios.get(i);
+            ratioLabels.add(option.label(layout));
+            if (option.equals(ratio)) selectedRatio = i;
         }
-        addOutputSize(Prefs.outputWidth(), Prefs.outputHeight());
-        Collections.sort(outputSizes, new Comparator<int[]>() {
-            @Override public int compare(int[] a, int[] b) {
-                long first = (long) a[0] * a[1];
-                long second = (long) b[0] * b[1];
-                return first < second ? -1 : first == second ? Integer.compare(a[0], b[0]) : 1;
-            }
-        });
+        bindSpinner(spAspectRatio, ratioLabels.toArray(new String[0]), selectedRatio);
+        outputSizes.clear();
+        outputSizes.addAll(OutputSizeOptions.sizes(ratio, layout, cameraSizes, width, height));
         List<String> labels = new ArrayList<String>();
         int selected = 0;
         for (int i = 0; i < outputSizes.size(); i++) {
@@ -576,21 +602,9 @@ public final class MainActivity extends Activity {
         suppressListener = wasSuppressed;
     }
 
-    private void addOutputSize(int width, int height) {
-        if (width < 16 || height < 16 || width > 4096 || height > 4096
-                || (width & 1) != 0 || (height & 1) != 0 || (long) width * height > 8294400L) return;
-        if (Prefs.outputLayout() != 2) {
-            int longer = Math.max(width, height);
-            int shorter = Math.min(width, height);
-            width = Prefs.outputLayout() == 0 ? longer : shorter;
-            height = Prefs.outputLayout() == 0 ? shorter : longer;
-        }
-        for (int[] size : outputSizes) if (size[0] == width && size[1] == height) return;
-        outputSizes.add(new int[] { width, height });
-    }
-
     private void showOutputEditors() {
         boolean custom = Prefs.outputLayout() == 2;
+        llAspectRatio.setVisibility(custom ? View.GONE : View.VISIBLE);
         llResolution.setVisibility(custom ? View.GONE : View.VISIBLE);
         llCustomSize.setVisibility(custom ? View.VISIBLE : View.GONE);
     }
@@ -605,6 +619,7 @@ public final class MainActivity extends Activity {
         }
         if (width != Prefs.outputWidth() || height != Prefs.outputHeight()) {
             Prefs.setOutputSize(width, height);
+            refreshResolutionOptions();
             updateGeometryLabel();
             scheduleStreamChanges();
         }
@@ -696,20 +711,43 @@ public final class MainActivity extends Activity {
 
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
+        arrangePanes();
+    }
+
+    private void arrangePanes() {
+        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        ViewGroup target = landscape ? svSettings : llContent;
+        if (settingsPanel.getParent() != target) {
+            ((ViewGroup) settingsPanel.getParent()).removeView(settingsPanel);
+            target.addView(settingsPanel);
+        }
+        llBody.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        svMain.setLayoutParams(new LinearLayout.LayoutParams(
+                landscape ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
+                landscape ? ViewGroup.LayoutParams.MATCH_PARENT : 0, landscape ? 1.1f : 1f));
+        svSettings.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        svSettings.setVisibility(landscape ? View.VISIBLE : View.GONE);
         flPreview.post(new Runnable() {
             @Override public void run() { resizePreview(displayedGeometry); }
         });
     }
 
     private void resizePreview(FrameGeometry geometry) {
-        if (geometry == null || geometry.fullWidth <= 0 || geometry.fullHeight <= 0) return;
-        View parent = (View) flPreview.getParent();
-        int availableWidth = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
-        if (availableWidth <= 0) availableWidth = getResources().getDisplayMetrics().widthPixels - dp(24);
+        int fullWidth = geometry == null ? 16 : geometry.fullWidth;
+        int fullHeight = geometry == null ? 9 : geometry.fullHeight;
+        if (fullWidth <= 0 || fullHeight <= 0) return;
+        int availableWidth = previewPanel.getWidth() - previewPanel.getPaddingLeft() - previewPanel.getPaddingRight();
+        if (availableWidth <= 0) return; // Wait for the pane's actual measurement after a rotation.
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        int limit = Math.max(dp(120), (int) (screenHeight * 0.42f));
-        int width = Math.max(1, Math.min(availableWidth, (int) (limit * (float) geometry.fullWidth / geometry.fullHeight)));
-        int height = Math.max(1, Math.round(width * (float) geometry.fullHeight / geometry.fullWidth));
+        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        int controlsHeight = Math.max(0, previewPanel.getHeight() - flPreview.getHeight());
+        int limit = landscape
+                ? Math.max(dp(72), svMain.getHeight() - controlsHeight
+                    - llContent.getPaddingTop() - llContent.getPaddingBottom())
+                : Math.max(dp(120), (int) (screenHeight * 0.42f));
+        int width = Math.max(1, Math.min(availableWidth, (int) (limit * (float) fullWidth / fullHeight)));
+        int height = Math.max(1, Math.round(width * (float) fullHeight / fullWidth));
         LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) flPreview.getLayoutParams();
         if (params.width != width || params.height != height || params.gravity != Gravity.CENTER_HORIZONTAL) {
             params.width = width;
@@ -813,6 +851,25 @@ public final class MainActivity extends Activity {
                 showOutputEditors();
                 updateGeometryLabel();
                 if (changed) scheduleStreamChanges();
+            }
+        });
+        spAspectRatio.setOnItemSelectedListener(new SimpleSelect() {
+            @Override public void onSelected(int position) {
+                if (Prefs.outputLayout() == 2 || position < 0 || position >= outputRatios.size()) return;
+                OutputSizeOptions.Ratio ratio = outputRatios.get(position);
+                if (ratio.equals(OutputSizeOptions.ratioOf(Prefs.outputWidth(), Prefs.outputHeight()))) return;
+                CameraCatalog.Entry camera = selectedCamera();
+                List<int[]> sizes = OutputSizeOptions.sizes(ratio, Prefs.outputLayout(),
+                        camera == null ? null : camera.sizes, Prefs.outputWidth(), Prefs.outputHeight());
+                int[] size = OutputSizeOptions.chooseSize(sizes, Prefs.outputWidth(), Prefs.outputHeight());
+                Prefs.setOutputSize(size[0], size[1]);
+                etOutputWidth.setText(String.valueOf(size[0]));
+                etOutputHeight.setText(String.valueOf(size[1]));
+                etOutputWidth.setError(null);
+                etOutputHeight.setError(null);
+                refreshResolutionOptions();
+                updateGeometryLabel();
+                scheduleStreamChanges();
             }
         });
         spResolution.setOnItemSelectedListener(new SimpleSelect() {
@@ -1325,51 +1382,14 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /**
-     * 把当前界面渲染成 PNG（调试用，见 {@link #EXTRA_UI_SHOT}）。
-     * 手动 measure/layout 是为了兼容「界面还没被系统真正布局」的情况。
-     */
+    /** Render the current viewport, including both panes, without relaying out live views. */
     private void captureUiToFile() {
         try {
-            int w = getResources().getDisplayMetrics().widthPixels;
-
-            // 先把整页内容（ScrollView 里的 LinearLayout）按不限高量一遍，
-            // 这样一次就能拍到「整页」，不用在设备上滚动。
-            View content = findViewById(R.id.llContent);
-            int totalH = 0;
-            if (content != null) {
-                content.measure(
-                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-                totalH = content.getMeasuredHeight();
-                content.layout(0, 0, w, totalH);
-            }
-
-            View header = findViewById(R.id.llHeader);
-            int headerH = 0;
-            if (header != null) {
-                header.measure(
-                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-                headerH = header.getMeasuredHeight();
-                header.layout(0, 0, w, headerH);
-            }
-
-            Bitmap bmp = Bitmap.createBitmap(w, Math.max(1, headerH + totalH),
-                    Bitmap.Config.ARGB_8888);
+            View root = findViewById(android.R.id.content);
+            if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return;
+            Bitmap bmp = Bitmap.createBitmap(root.getWidth(), root.getHeight(), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bmp);
-            canvas.drawColor(getResources().getColor(R.color.background));
-            if (header != null) {
-                canvas.save();
-                header.draw(canvas);
-                canvas.restore();
-            }
-            if (content != null) {
-                canvas.save();
-                canvas.translate(0, headerH);
-                content.draw(canvas);
-                canvas.restore();
-            }
+            root.draw(canvas);
 
             File dir = getExternalFilesDir(null);
             if (dir == null) {
@@ -1394,7 +1414,7 @@ public final class MainActivity extends Activity {
 
         @Override
         public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-            if (!suppressListener) {
+            if (!suppressListener && position == parent.getSelectedItemPosition()) {
                 onSelected(position);
             }
         }

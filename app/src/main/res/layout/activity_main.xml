@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -26,23 +27,19 @@
                 android:textColor="@color/on_surface"
                 android:textSize="23sp"
                 android:fontFamily="sans-serif-medium" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/app_subtitle"
                 android:textColor="@color/primary"
                 android:textSize="11sp" />
-
         </LinearLayout>
-
         <TextView
             android:id="@+id/tvStatus"
             style="@style/Chip"
             android:background="@drawable/bg_chip_stopped"
             android:textColor="@color/chip_stopped_fg"
             android:text="@string/status_stopped" />
-
         <TextView
             android:id="@+id/btnHelp"
             android:layout_width="48dp"
@@ -54,648 +51,639 @@
             android:textSize="13sp"
             android:background="?android:attr/selectableItemBackground"
             android:focusable="true" />
-
     </LinearLayout>
-
-    <ScrollView
+    <LinearLayout
+        android:id="@+id/llBody"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fillViewport="true"
-        android:clipToPadding="false">
-        <LinearLayout
-            android:id="@+id/llContent"
+        android:orientation="vertical"
+        android:layout_weight="1">
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:clipToPadding="false"
+            android:id="@+id/svMain">
+            <LinearLayout
+                android:id="@+id/llContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:paddingBottom="20dp">
+                <LinearLayout
+                    android:id="@+id/previewPanel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <FrameLayout
+                        android:id="@+id/flPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/preview_height"
+                        android:background="@drawable/bg_preview"
+                        android:layout_gravity="center_horizontal">
+                        <com.oldphone.ipcam.CropPreviewView
+                            android:id="@+id/ivPreview"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:contentDescription="@string/preview_title"
+                            android:visibility="gone" />
+                        <LinearLayout
+                            android:id="@+id/llPreviewEmpty"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:orientation="vertical"
+                            android:gravity="center">
+                            <TextView
+                                android:id="@+id/tvPreviewEmptyTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/preview_idle"
+                                android:textColor="@color/preview_placeholder"
+                                android:textSize="14sp" />
+                            <TextView
+                                android:id="@+id/tvPreviewEmptyHint"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:visibility="gone" />
+                        </LinearLayout>
+                    </FrameLayout>
+                    <TextView
+                        android:id="@+id/tvGeometry"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textSize="12sp"
+                        android:textColor="@color/on_surface_variant"
+                        android:lineSpacingExtra="3dp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal"
+                        android:gravity="bottom">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="0dp"
+                            android:orientation="vertical">
+                            <TextView
+                                style="@style/Text.Label"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/label_camera"
+                                android:labelFor="@+id/spCamera" />
+                            <FrameLayout
+                                style="@style/Field">
+                                <TextView
+                                    android:layout_width="24dp"
+                                    android:layout_height="match_parent"
+                                    android:layout_gravity="right|center_vertical"
+                                    android:layout_marginRight="8dp"
+                                    android:gravity="center"
+                                    android:text="▾"
+                                    android:textSize="15sp"
+                                    android:textColor="@color/on_surface_variant"
+                                    android:importantForAccessibility="no" />
+                                <Spinner
+                                    android:id="@+id/spCamera"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="match_parent"
+                                    android:background="@null"
+                                    android:spinnerMode="dropdown"
+                                    android:popupBackground="@color/surface" />
+                            </FrameLayout>
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/btnCalibrate"
+                            android:layout_width="wrap_content"
+                            android:layout_height="@dimen/field_height"
+                            android:gravity="center"
+                            android:paddingLeft="6dp"
+                            android:paddingRight="6dp"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true"
+                            android:text="@string/calibrate_camera"
+                            android:textColor="@color/on_surface_variant"
+                            android:textSize="12sp"
+                            android:layout_marginLeft="4dp" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/settingsPanel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+                    <CheckBox
+                        android:id="@+id/cbOrientationLock"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="44dp"
+                        android:text="@string/lock_orientation"
+                        android:textColor="@color/on_surface"
+                        android:textSize="13sp" />
+                    <Button
+                        android:id="@+id/btnToggle"
+                        style="@style/Button.Primary"
+                        android:text="@string/btn_start" />
+                    <TextView
+                        android:id="@+id/tvDetail"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="center"
+                        android:textColor="@color/on_surface_variant"
+                        android:textSize="12sp"
+                        android:text="@string/detail_idle" />
+                    <LinearLayout
+                        style="@style/Card">
+                        <TextView
+                            style="@style/Text.Section"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/section_settings" />
+                        <LinearLayout
+                            android:id="@+id/llOutputShape"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="10dp">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="0dp"
+                                android:orientation="vertical">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_output_layout"
+                                    android:labelFor="@+id/spOutputLayout" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spOutputLayout"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="8dp"
+                                android:orientation="vertical"
+                                android:id="@+id/llAspectRatio">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_aspect_ratio"
+                                    android:labelFor="@+id/spAspectRatio" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spAspectRatio"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/llCustomSize"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:visibility="gone">
+                            <EditText
+                                android:id="@+id/etOutputWidth"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/field_height"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_field"
+                                android:paddingLeft="12dp"
+                                android:paddingRight="12dp"
+                                android:singleLine="true"
+                                android:inputType="number"
+                                android:imeOptions="actionNext"
+                                android:hint="@string/output_width"
+                                android:contentDescription="@string/output_width"
+                                android:textColor="@color/on_surface"
+                                android:textColorHint="@color/on_surface_variant"
+                                android:textSize="14sp" />
+                            <TextView
+                                android:layout_width="24dp"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:text="×"
+                                android:textColor="@color/on_surface_variant" />
+                            <EditText
+                                android:id="@+id/etOutputHeight"
+                                android:layout_width="0dp"
+                                android:layout_height="@dimen/field_height"
+                                android:layout_weight="1"
+                                android:background="@drawable/bg_field"
+                                android:paddingLeft="12dp"
+                                android:paddingRight="12dp"
+                                android:singleLine="true"
+                                android:inputType="number"
+                                android:imeOptions="actionDone"
+                                android:hint="@string/output_height"
+                                android:contentDescription="@string/output_height"
+                                android:textColor="@color/on_surface"
+                                android:textColorHint="@color/on_surface_variant"
+                                android:textSize="14sp" />
+                            <Button
+                                android:id="@+id/btnApplySize"
+                                android:layout_width="wrap_content"
+                                android:layout_height="@dimen/field_height"
+                                android:minWidth="64dp"
+                                android:text="@string/apply_output_size"
+                                android:textColor="@color/primary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+                            <LinearLayout
+                                android:id="@+id/llResolution"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="0dp"
+                                android:orientation="vertical">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_resolution"
+                                    android:labelFor="@+id/spResolution" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spResolution"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="8dp"
+                                android:orientation="vertical">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_fps"
+                                    android:labelFor="@+id/spFps" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spFps"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                        </LinearLayout>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="0dp"
+                                android:orientation="vertical">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_bitrate"
+                                    android:labelFor="@+id/spBitrate" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spBitrate"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginLeft="8dp"
+                                android:orientation="vertical">
+                                <TextView
+                                    style="@style/Text.Label"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/label_mode"
+                                    android:labelFor="@+id/spMode" />
+                                <FrameLayout
+                                    style="@style/Field">
+                                    <TextView
+                                        android:layout_width="24dp"
+                                        android:layout_height="match_parent"
+                                        android:layout_gravity="right|center_vertical"
+                                        android:layout_marginRight="8dp"
+                                        android:gravity="center"
+                                        android:text="▾"
+                                        android:textSize="15sp"
+                                        android:textColor="@color/on_surface_variant"
+                                        android:importantForAccessibility="no" />
+                                    <Spinner
+                                        android:id="@+id/spMode"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="match_parent"
+                                        android:background="@null"
+                                        android:spinnerMode="dropdown"
+                                        android:popupBackground="@color/surface" />
+                                </FrameLayout>
+                            </LinearLayout>
+                        </LinearLayout>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="@string/output_size_hint"
+                            android:textColor="@color/on_surface_variant"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                    <LinearLayout
+                        style="@style/Card">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                style="@style/Text.Section"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/section_address" />
+                            <TextView
+                                style="@style/Text.Label"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/section_address_hint" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/rowRtsp"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true">
+                            <TextView
+                                android:layout_width="52dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/addr_rtsp"
+                                android:textColor="@color/on_surface_variant"
+                                android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/tvRtsp"
+                                style="@style/Text.Mono"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="middle"
+                                android:singleLine="true" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/rowMjpeg"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true">
+                            <TextView
+                                android:layout_width="52dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/addr_mjpeg"
+                                android:textColor="@color/on_surface_variant"
+                                android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/tvMjpeg"
+                                style="@style/Text.Mono"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="middle"
+                                android:singleLine="true" />
+                        </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/rowSnapshot"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true">
+                            <TextView
+                                android:layout_width="52dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/addr_snapshot"
+                                android:textColor="@color/on_surface_variant"
+                                android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/tvSnapshot"
+                                style="@style/Text.Mono"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="middle"
+                                android:singleLine="true" />
+                        </LinearLayout>
+                    </LinearLayout>
+                    <LinearLayout
+                        style="@style/Card">
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <TextView
+                                style="@style/Text.Section"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/section_devices" />
+                            <TextView
+                                android:id="@+id/btnRescan"
+                                android:layout_width="wrap_content"
+                                android:layout_height="44dp"
+                                android:paddingLeft="12dp"
+                                android:paddingRight="12dp"
+                                android:gravity="center"
+                                android:text="@string/btn_rescan"
+                                android:textColor="@color/primary"
+                                android:textSize="13sp"
+                                android:background="?android:attr/selectableItemBackground"
+                                android:focusable="true" />
+                        </LinearLayout>
+                        <TextView
+                            android:id="@+id/tvDevicesStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/on_surface_variant"
+                            android:textSize="12sp" />
+                        <LinearLayout
+                            android:id="@+id/llDevices"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+                    <LinearLayout
+                        style="@style/Card">
+                        <CheckBox
+                            android:id="@+id/cbBoot"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:text="@string/label_boot"
+                            android:textColor="@color/on_surface"
+                            android:textSize="14sp" />
+                        <CheckBox
+                            android:id="@+id/cbAuth"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:text="@string/label_auth"
+                            android:textColor="@color/on_surface"
+                            android:textSize="14sp" />
+                        <LinearLayout
+                            android:id="@+id/llAuth"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="8dp"
+                            android:visibility="gone">
+                            <EditText
+                                android:id="@+id/etUser"
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/field_height"
+                                android:background="@drawable/bg_field"
+                                android:paddingLeft="14dp"
+                                android:paddingRight="14dp"
+                                android:singleLine="true"
+                                android:inputType="textNoSuggestions"
+                                android:imeOptions="actionNext"
+                                android:hint="@string/hint_user"
+                                android:textSize="14sp"
+                                android:textColor="@color/on_surface"
+                                android:textColorHint="@color/on_surface_disabled" />
+                            <EditText
+                                android:id="@+id/etPass"
+                                android:layout_width="match_parent"
+                                android:layout_height="@dimen/field_height"
+                                android:layout_marginTop="8dp"
+                                android:background="@drawable/bg_field"
+                                android:paddingLeft="14dp"
+                                android:paddingRight="14dp"
+                                android:singleLine="true"
+                                android:inputType="textPassword"
+                                android:imeOptions="actionDone"
+                                android:hint="@string/hint_pass"
+                                android:textSize="14sp"
+                                android:textColor="@color/on_surface"
+                                android:textColorHint="@color/on_surface_disabled" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+        <ScrollView
+            android:id="@+id/svSettings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:paddingLeft="12dp"
             android:paddingRight="12dp"
-            android:paddingBottom="20dp">
-            <FrameLayout
-                android:id="@+id/flPreview"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/preview_height"
-                android:background="@drawable/bg_preview">
-                <com.oldphone.ipcam.CropPreviewView
-                    android:id="@+id/ivPreview"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:contentDescription="@string/preview_title"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/llPreviewEmpty"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:orientation="vertical"
-                    android:gravity="center">
-                    <TextView
-                        android:id="@+id/tvPreviewEmptyTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/preview_idle"
-                        android:textColor="@color/preview_placeholder"
-                        android:textSize="14sp" />
-
-                    <TextView
-                        android:id="@+id/tvPreviewEmptyHint"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:visibility="gone" />
-
-                </LinearLayout>
-
-            </FrameLayout>
-
-            <TextView
-                android:id="@+id/tvGeometry"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:textSize="12sp"
-                android:textColor="@color/on_surface_variant"
-                android:lineSpacingExtra="3dp" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginLeft="0dp"
-                    android:orientation="vertical">
-                    <TextView
-                        style="@style/Text.Label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/label_camera"
-                        android:labelFor="@+id/spCamera" />
-
-                    <FrameLayout
-                        style="@style/Field">
-                        <TextView
-                            android:layout_width="24dp"
-                            android:layout_height="match_parent"
-                            android:layout_gravity="right|center_vertical"
-                            android:layout_marginRight="8dp"
-                            android:gravity="center"
-                            android:text="▾"
-                            android:textSize="15sp"
-                            android:textColor="@color/on_surface_variant"
-                            android:importantForAccessibility="no" />
-
-                        <Spinner
-                            android:id="@+id/spCamera"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:background="@null"
-                            android:spinnerMode="dropdown"
-                            android:popupBackground="@color/surface" />
-
-                    </FrameLayout>
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginLeft="8dp"
-                    android:orientation="vertical">
-                    <TextView
-                        style="@style/Text.Label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/label_output_layout"
-                        android:labelFor="@+id/spOutputLayout" />
-
-                    <FrameLayout
-                        style="@style/Field">
-                        <TextView
-                            android:layout_width="24dp"
-                            android:layout_height="match_parent"
-                            android:layout_gravity="right|center_vertical"
-                            android:layout_marginRight="8dp"
-                            android:gravity="center"
-                            android:text="▾"
-                            android:textSize="15sp"
-                            android:textColor="@color/on_surface_variant"
-                            android:importantForAccessibility="no" />
-
-                        <Spinner
-                            android:id="@+id/spOutputLayout"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:background="@null"
-                            android:spinnerMode="dropdown"
-                            android:popupBackground="@color/surface" />
-
-                    </FrameLayout>
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-                <CheckBox
-                    android:id="@+id/cbOrientationLock"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:minHeight="44dp"
-                    android:text="@string/lock_orientation"
-                    android:textColor="@color/on_surface"
-                    android:textSize="13sp" />
-                <TextView
-                    android:id="@+id/btnCalibrate"
-                    android:layout_width="wrap_content"
-                    android:layout_height="44dp"
-                    android:gravity="center"
-                    android:paddingLeft="8dp"
-                    android:paddingRight="8dp"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:focusable="true"
-                    android:text="@string/calibrate_camera"
-                    android:textColor="@color/on_surface_variant"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnToggle"
-                style="@style/Button.Primary"
-                android:text="@string/btn_start" />
-
-            <TextView
-                android:id="@+id/tvDetail"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center"
-                android:textColor="@color/on_surface_variant"
-                android:textSize="12sp"
-                android:text="@string/detail_idle" />
-
-            <LinearLayout
-                style="@style/Card">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <TextView
-                        style="@style/Text.Section"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/section_address" />
-
-                    <TextView
-                        style="@style/Text.Label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/section_address_hint" />
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/rowRtsp"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:focusable="true">
-                    <TextView
-                        android:layout_width="52dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/addr_rtsp"
-                        android:textColor="@color/on_surface_variant"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvRtsp"
-                        style="@style/Text.Mono"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:ellipsize="middle"
-                        android:singleLine="true" />
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/rowMjpeg"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:focusable="true">
-                    <TextView
-                        android:layout_width="52dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/addr_mjpeg"
-                        android:textColor="@color/on_surface_variant"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvMjpeg"
-                        style="@style/Text.Mono"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:ellipsize="middle"
-                        android:singleLine="true" />
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/rowSnapshot"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:focusable="true">
-                    <TextView
-                        android:layout_width="52dp"
-                        android:layout_height="wrap_content"
-                        android:text="@string/addr_snapshot"
-                        android:textColor="@color/on_surface_variant"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/tvSnapshot"
-                        style="@style/Text.Mono"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:ellipsize="middle"
-                        android:singleLine="true" />
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-            <LinearLayout
-                style="@style/Card">
-                <TextView
-                    style="@style/Text.Section"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/section_settings" />
-
-                <LinearLayout
-                    android:id="@+id/llCustomSize"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:visibility="gone">
-                    <EditText
-                        android:id="@+id/etOutputWidth"
-                        android:layout_width="0dp"
-                        android:layout_height="@dimen/field_height"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_field"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:singleLine="true"
-                        android:inputType="number"
-                        android:imeOptions="actionNext"
-                        android:hint="@string/output_width"
-                        android:contentDescription="@string/output_width"
-                        android:textColor="@color/on_surface"
-                        android:textColorHint="@color/on_surface_variant"
-                        android:textSize="14sp" />
-                    <TextView
-                        android:layout_width="24dp"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:text="×"
-                        android:textColor="@color/on_surface_variant" />
-                    <EditText
-                        android:id="@+id/etOutputHeight"
-                        android:layout_width="0dp"
-                        android:layout_height="@dimen/field_height"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_field"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:singleLine="true"
-                        android:inputType="number"
-                        android:imeOptions="actionDone"
-                        android:hint="@string/output_height"
-                        android:contentDescription="@string/output_height"
-                        android:textColor="@color/on_surface"
-                        android:textColorHint="@color/on_surface_variant"
-                        android:textSize="14sp" />
-                    <Button
-                        android:id="@+id/btnApplySize"
-                        android:layout_width="wrap_content"
-                        android:layout_height="@dimen/field_height"
-                        android:minWidth="64dp"
-                        android:text="@string/apply_output_size"
-                        android:textColor="@color/primary"
-                        android:textSize="13sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-                    <LinearLayout
-                        android:id="@+id/llResolution"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginLeft="0dp"
-                        android:orientation="vertical">
-                        <TextView
-                            style="@style/Text.Label"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/label_resolution"
-                            android:labelFor="@+id/spResolution" />
-
-                        <FrameLayout
-                            style="@style/Field">
-                            <TextView
-                                android:layout_width="24dp"
-                                android:layout_height="match_parent"
-                                android:layout_gravity="right|center_vertical"
-                                android:layout_marginRight="8dp"
-                                android:gravity="center"
-                                android:text="▾"
-                                android:textSize="15sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:importantForAccessibility="no" />
-
-                            <Spinner
-                                android:id="@+id/spResolution"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:background="@null"
-                                android:spinnerMode="dropdown"
-                                android:popupBackground="@color/surface" />
-
-                        </FrameLayout>
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginLeft="8dp"
-                        android:orientation="vertical">
-                        <TextView
-                            style="@style/Text.Label"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/label_fps"
-                            android:labelFor="@+id/spFps" />
-
-                        <FrameLayout
-                            style="@style/Field">
-                            <TextView
-                                android:layout_width="24dp"
-                                android:layout_height="match_parent"
-                                android:layout_gravity="right|center_vertical"
-                                android:layout_marginRight="8dp"
-                                android:gravity="center"
-                                android:text="▾"
-                                android:textSize="15sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:importantForAccessibility="no" />
-
-                            <Spinner
-                                android:id="@+id/spFps"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:background="@null"
-                                android:spinnerMode="dropdown"
-                                android:popupBackground="@color/surface" />
-
-                        </FrameLayout>
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginLeft="0dp"
-                        android:orientation="vertical">
-                        <TextView
-                            style="@style/Text.Label"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/label_bitrate"
-                            android:labelFor="@+id/spBitrate" />
-
-                        <FrameLayout
-                            style="@style/Field">
-                            <TextView
-                                android:layout_width="24dp"
-                                android:layout_height="match_parent"
-                                android:layout_gravity="right|center_vertical"
-                                android:layout_marginRight="8dp"
-                                android:gravity="center"
-                                android:text="▾"
-                                android:textSize="15sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:importantForAccessibility="no" />
-
-                            <Spinner
-                                android:id="@+id/spBitrate"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:background="@null"
-                                android:spinnerMode="dropdown"
-                                android:popupBackground="@color/surface" />
-
-                        </FrameLayout>
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginLeft="8dp"
-                        android:orientation="vertical">
-                        <TextView
-                            style="@style/Text.Label"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/label_mode"
-                            android:labelFor="@+id/spMode" />
-
-                        <FrameLayout
-                            style="@style/Field">
-                            <TextView
-                                android:layout_width="24dp"
-                                android:layout_height="match_parent"
-                                android:layout_gravity="right|center_vertical"
-                                android:layout_marginRight="8dp"
-                                android:gravity="center"
-                                android:text="▾"
-                                android:textSize="15sp"
-                                android:textColor="@color/on_surface_variant"
-                                android:importantForAccessibility="no" />
-
-                            <Spinner
-                                android:id="@+id/spMode"
-                                android:layout_width="match_parent"
-                                android:layout_height="match_parent"
-                                android:background="@null"
-                                android:spinnerMode="dropdown"
-                                android:popupBackground="@color/surface" />
-
-                        </FrameLayout>
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="@string/output_size_hint"
-                    android:textColor="@color/on_surface_variant"
-                    android:textSize="11sp" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                style="@style/Card">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-                    <TextView
-                        style="@style/Text.Section"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/section_devices" />
-
-                    <TextView
-                        android:id="@+id/btnRescan"
-                        android:layout_width="wrap_content"
-                        android:layout_height="44dp"
-                        android:paddingLeft="12dp"
-                        android:paddingRight="12dp"
-                        android:gravity="center"
-                        android:text="@string/btn_rescan"
-                        android:textColor="@color/primary"
-                        android:textSize="13sp"
-                        android:background="?android:attr/selectableItemBackground"
-                        android:focusable="true" />
-
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tvDevicesStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/on_surface_variant"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:id="@+id/llDevices"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                style="@style/Card">
-                <CheckBox
-                    android:id="@+id/cbBoot"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:text="@string/label_boot"
-                    android:textColor="@color/on_surface"
-                    android:textSize="14sp" />
-
-                <CheckBox
-                    android:id="@+id/cbAuth"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:minHeight="44dp"
-                    android:text="@string/label_auth"
-                    android:textColor="@color/on_surface"
-                    android:textSize="14sp" />
-
-                <LinearLayout
-                    android:id="@+id/llAuth"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginTop="8dp"
-                    android:visibility="gone">
-                    <EditText
-                        android:id="@+id/etUser"
-                        android:layout_width="match_parent"
-                        android:layout_height="@dimen/field_height"
-                        android:background="@drawable/bg_field"
-                        android:paddingLeft="14dp"
-                        android:paddingRight="14dp"
-                        android:singleLine="true"
-                        android:inputType="textNoSuggestions"
-                        android:imeOptions="actionNext"
-                        android:hint="@string/hint_user"
-                        android:textSize="14sp"
-                        android:textColor="@color/on_surface"
-                        android:textColorHint="@color/on_surface_disabled" />
-
-                    <EditText
-                        android:id="@+id/etPass"
-                        android:layout_width="match_parent"
-                        android:layout_height="@dimen/field_height"
-                        android:layout_marginTop="8dp"
-                        android:background="@drawable/bg_field"
-                        android:paddingLeft="14dp"
-                        android:paddingRight="14dp"
-                        android:singleLine="true"
-                        android:inputType="textPassword"
-                        android:imeOptions="actionDone"
-                        android:hint="@string/hint_pass"
-                        android:textSize="14sp"
-                        android:textColor="@color/on_surface"
-                        android:textColorHint="@color/on_surface_disabled" />
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-    </ScrollView>
-
+            android:paddingBottom="20dp"
+            android:fillViewport="true"
+            android:clipToPadding="false"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

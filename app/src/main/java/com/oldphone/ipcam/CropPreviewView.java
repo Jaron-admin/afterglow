@@ -55,10 +55,5 @@ public final class CropPreviewView extends View {
         canvas.drawRect(destination.left, crop.bottom, destination.right, destination.bottom, paint);
         canvas.drawRect(destination.left, crop.top, crop.left, crop.bottom, paint);
         canvas.drawRect(crop.right, crop.top, destination.right, crop.bottom, paint);
-        paint.setColor(0xffffca78);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(getResources().getDisplayMetrics().density);
-        canvas.drawRect(crop, paint);
-        paint.setStyle(Paint.Style.FILL);
     }
 }

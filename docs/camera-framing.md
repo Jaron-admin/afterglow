@@ -6,6 +6,18 @@ upright full frame → centered, chroma-aligned crop → selected output dimensi
 RTSP, MJPEG and snapshots consume that cropped output. The local preview instead
 uses the complete upright input and the **same** crop coordinates for its mask.
 
+Output selection is ordered by direction, exact aspect ratio, and pixel size.
+The default for new settings is 1280×720 (16:9); existing explicit dimensions and
+legacy resolution indices are preserved. Ratio options are independent of source
+frame ratios, so a camera exposing only 4:3 YUV input can still supply 16:9 output.
+Switching ratios chooses a nearby output size without increasing pixel count when
+a smaller option exists. The preview uses translucent crop masks without a border.
+
+The activity handles configuration changes by moving its existing settings panel
+between the portrait content column and a separate landscape scroll pane. It
+keeps the preview on the left and settings on the right without recreating inputs,
+listeners, or the streaming service.
+
 `OrientationEventListener` supplies a clockwise physical device angle, quantized
 to four positions with a 50° hysteresis threshold and 350 ms stable interval.
 Unknown (for example flat) poses retain the previous committed angle. For a

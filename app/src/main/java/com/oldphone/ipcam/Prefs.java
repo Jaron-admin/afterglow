@@ -183,10 +183,12 @@ public final class Prefs {
         setStr(KEY_CAMERA_KEY, key);
     }
     public static int outputWidth() {
-        return getInt(KEY_OUTPUT_WIDTH, RESOLUTIONS[resIndex()][0]);
+        return getInt(KEY_OUTPUT_WIDTH, p() != null && p().contains(KEY_RES)
+                ? RESOLUTIONS[resIndex()][0] : 1280);
     }
     public static int outputHeight() {
-        return getInt(KEY_OUTPUT_HEIGHT, RESOLUTIONS[resIndex()][1]);
+        return getInt(KEY_OUTPUT_HEIGHT, p() != null && p().contains(KEY_RES)
+                ? RESOLUTIONS[resIndex()][1] : 720);
     }
     public static void setOutputSize(int width, int height) {
         if (!FrameGeometry.validOutputSize(width, height))

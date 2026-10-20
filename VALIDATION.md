@@ -1,4 +1,20 @@
-# Validation — Afterglow 1.2.0
+# Validation — Afterglow 1.2.1
+
+Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
+
+- `tests/run.ps1`: successful. New output-menu tests verify exact aspect-ratio filtering, deduplication, source-independent 16:9 presets, portrait transposition, pixel-count-based selection, new-install defaults, and preservation of saved/custom/legacy settings. Existing geometry, camera, lifecycle, protocol and browser suites also pass.
+- Gradle `assembleDebug lintDebug`: successful, 0 errors and 88 warnings.
+- `build-apk.ps1`: successful. `Afterglow-1.2.1.apk` is version code 4, minSdk 19, targetSdk 33; v1/v2/v3 signatures verified.
+- Layout XML parses with all previous view IDs present and no duplicate IDs. Review covered pane reparenting on configuration changes, preview sizing, Spinner state and ratio selection; no blocking findings remain.
+- No physical-device installation or UI rendering test was performed. Extremely short landscape screens and larger font settings may require scrolling the left preview pane as well as the right settings pane.
+
+Device checks still needed: rotate between all four directions while streaming,
+confirm left preview/right settings in landscape and a single column in portrait,
+preserve an in-progress custom-size edit during rotation, check exact ratio-filtered
+choices, and verify crop masks without a border. Upgrade preserves an explicit
+existing output size; 1280×720 is the new-install default.
+
+# Previous validation — Afterglow 1.2.0
 
 Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
 

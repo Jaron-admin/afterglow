@@ -40,7 +40,8 @@
     <string name="label_camera">摄像头</string>
     <string name="label_rotation">旋转</string>
     <string name="label_resolution">输出分辨率</string>
-    <string name="label_output_layout">输出画幅</string>
+    <string name="label_output_layout">输出方向</string>
+    <string name="label_aspect_ratio">画面比例</string>
     <string name="camera_auto">自动选择镜头</string>
     <string name="camera_catalog_waiting">正在读取镜头信息，请稍后校准</string>
     <string name="camera_front_legacy">前置（自动选择）</string>
@@ -56,8 +57,8 @@
     <string name="output_dimension_invalid">请输入 16–4096 之间的偶数</string>
     <string name="output_pixel_limit">总像素不能超过 8294400</string>
     <string name="output_size_hint">亮区推流，暗区裁掉。输出尺寸不随手机旋转。</string>
-    <string name="geometry_live">完整取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d</string>
-    <string name="geometry_available">镜头可用尺寸 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d · 开启后显示实际取景</string>
+    <string name="geometry_live">取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d</string>
+    <string name="geometry_available">可用取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d · 实际取景以开启后为准</string>
     <string name="geometry_unknown">开启后显示完整输入尺寸与比例\n最终输出 %1$d×%2$d</string>
     <string-array name="output_layouts"><item>横屏</item><item>竖屏</item><item>自定义</item></string-array>
     <string-array name="camera_calibration_offsets"><item>自动校正 · 偏移 0°</item><item>手动偏移 90°</item><item>手动偏移 180°</item><item>手动偏移 270°</item></string-array>
