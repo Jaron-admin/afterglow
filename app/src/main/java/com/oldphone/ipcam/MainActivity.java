@@ -70,6 +70,9 @@ public final class MainActivity extends Activity {
     private TextView tvMjpeg;
     private TextView tvSnapshot;
     private Button btnToggle;
+    private TextView tvRecordingStatus;
+    private TextView tvLastEvent;
+    private boolean startAfterPermission;
 
     private View rowRtsp;
     private View rowMjpeg;
@@ -325,12 +328,7 @@ public final class MainActivity extends Activity {
             return;
         }
         intent.removeExtra(EXTRA_AUTOSTART);
-        if (CameraStreamService.running || !hasCameraPermission()) {
-            return;
-        }
-        if (saveSettings()) {
-            startServiceNow();
-        }
+        if (!CameraStreamService.running) beginStart();
     }
 
     @Override
@@ -348,14 +346,16 @@ public final class MainActivity extends Activity {
         CameraStreamService.setPreviewListener(previewListener);
 
         // 首次进入自动扫一次，之后交给「重新扫描」按钮，避免每次切回都扫全网段
-        if (!autoScanned) {
+        if (!autoScanned && Prefs.mode() != Prefs.MODE_LOCAL) {
             autoScanned = true;
             handler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    scanDevices();
+                    if (Prefs.mode() != Prefs.MODE_LOCAL) scanDevices();
                 }
             }, 500);
+        } else if (!autoScanned && Prefs.mode() == Prefs.MODE_LOCAL && !scanning) {
+            tvDevicesStatus.setText("仅本地模式，可手动扫描局域网");
         }
     }
 
@@ -446,6 +446,54 @@ public final class MainActivity extends Activity {
         tvDevicesStatus = (TextView) findViewById(R.id.tvDevicesStatus);
         llDevices = (LinearLayout) findViewById(R.id.llDevices);
         btnRescan = (TextView) findViewById(R.id.btnRescan);
+        addRecordingControls();
+    }
+
+    private void addRecordingControls() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(8), dp(12), dp(10));
+        panel.setBackgroundResource(R.drawable.bg_card);
+        LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        panelParams.topMargin = dp(12);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button settings = new Button(this);
+        settings.setText("录像与检测");
+        settings.setTextSize(13);
+        settings.setAllCaps(false);
+        settings.setTextColor(getResources().getColor(R.color.primary));
+        settings.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                startActivity(new Intent(MainActivity.this, RecordingSettingsActivity.class));
+            }
+        });
+        Button recordings = new Button(this);
+        recordings.setText("录像列表");
+        recordings.setTextSize(13);
+        recordings.setAllCaps(false);
+        recordings.setTextColor(getResources().getColor(R.color.primary));
+        recordings.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                startActivity(new Intent(MainActivity.this, RecordingsActivity.class));
+            }
+        });
+        actions.addView(settings, new LinearLayout.LayoutParams(0, dp(48), 1));
+        actions.addView(recordings, new LinearLayout.LayoutParams(0, dp(48), 1));
+        panel.addView(actions);
+        tvRecordingStatus = new TextView(this);
+        tvRecordingStatus.setTextSize(12);
+        tvRecordingStatus.setTextColor(getResources().getColor(R.color.on_surface_variant));
+        tvRecordingStatus.setPadding(0, dp(4), 0, 0);
+        panel.addView(tvRecordingStatus);
+        tvLastEvent = new TextView(this);
+        tvLastEvent.setTextSize(12);
+        tvLastEvent.setTextColor(getResources().getColor(R.color.on_surface_variant));
+        tvLastEvent.setPadding(0, dp(4), 0, 0);
+        panel.addView(tvLastEvent);
+        LinearLayout parent = (LinearLayout) settingsPanel;
+        parent.addView(panel, parent.indexOfChild(tvDetail) + 1, panelParams);
     }
 
     private void setupSpinners() {
@@ -690,23 +738,7 @@ public final class MainActivity extends Activity {
     }
 
     private void applyRequestedOrientation() {
-        if (!Prefs.orientationLocked()) {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
-            return;
-        }
-        int current = getWindowManager().getDefaultDisplay().getRotation();
-        boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
-        boolean naturalPortrait = ((current == Surface.ROTATION_0 || current == Surface.ROTATION_180) && portrait)
-                || ((current == Surface.ROTATION_90 || current == Surface.ROTATION_270) && !portrait);
-        int locked = Prefs.lockedDisplayRotation();
-        int[] requests = naturalPortrait ? new int[] {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-        } : new int[] {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        };
-        setRequestedOrientation(requests[Math.max(0, Math.min(3, locked))]);
+        ActivityOrientation.apply(this);
     }
 
     @Override public void onConfigurationChanged(Configuration configuration) {
@@ -805,13 +837,7 @@ public final class MainActivity extends Activity {
                 if (CameraStreamService.running) {
                     stopServiceNow();
                 } else {
-                    if (!hasCameraPermission()) {
-                        requestPermissions();
-                        return;
-                    }
-                    if (saveSettings()) {
-                        startServiceNow();
-                    }
+                    beginStart();
                 }
             }
         });
@@ -925,6 +951,14 @@ public final class MainActivity extends Activity {
         spMode.setOnItemSelectedListener(new SimpleSelect() {
             @Override
             public void onSelected(int position) {
+                if (position == Prefs.MODE_LOCAL && Prefs.recordingMode() == 0
+                        && CameraStreamService.running) {
+                    suppressListener = true;
+                    spMode.setSelection(Prefs.mode(), false);
+                    suppressListener = false;
+                    Toast.makeText(MainActivity.this, "请先在“录像与检测”启用录像", Toast.LENGTH_LONG).show();
+                    return;
+                }
                 updateStreamSetting(Prefs.KEY_MODE, Prefs.MODE_BOTH, position);
                 refreshAddresses();
             }
@@ -1173,6 +1207,28 @@ public final class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
+    private boolean hasCapturePermissions() {
+        return hasCameraPermission() && (!Prefs.microphoneEnabled() || Build.VERSION.SDK_INT < 23
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
+    }
+
+    private void beginStart() {
+        if (!saveSettings() || !validateLocalRecording()) return;
+        if (!hasCapturePermissions()) {
+            startAfterPermission = true;
+            requestPermissions();
+            return;
+        }
+        startServiceNow();
+    }
+
+    private boolean validateLocalRecording() {
+        if (Prefs.mode() != Prefs.MODE_LOCAL || Prefs.recordingMode() != 0) return true;
+        Toast.makeText(this, "仅本地模式需要先启用连续或事件录像", Toast.LENGTH_LONG).show();
+        startActivity(new Intent(this, RecordingSettingsActivity.class));
+        return false;
+    }
+
     private void requestPermissions() {
         if (Build.VERSION.SDK_INT < 23) {
             return;
@@ -1180,6 +1236,10 @@ public final class MainActivity extends Activity {
         List<String> perms = new ArrayList<String>();
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             perms.add(Manifest.permission.CAMERA);
+        }
+        if (Prefs.microphoneEnabled()
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            perms.add(Manifest.permission.RECORD_AUDIO);
         }
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -1195,18 +1255,24 @@ public final class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_PERM) {
-            if (hasCameraPermission()) {
+            boolean requestedStart = startAfterPermission;
+            startAfterPermission = false;
+            if (hasCapturePermissions()) {
                 loadCameras();
-                if (saveSettings()) {
+                if (requestedStart && saveSettings() && validateLocalRecording()) {
                     startServiceNow();
                 }
             } else {
-                Toast.makeText(this, "需要摄像头权限才能推流", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, Prefs.microphoneEnabled()
+                        ? "未启动：需要摄像头和麦克风权限；也可在设置中关闭麦克风"
+                        : "未启动：需要摄像头权限", Toast.LENGTH_LONG).show();
             }
         }
     }
 
     private void startServiceNow() {
+        if (!hasCapturePermissions() || !validateLocalRecording()) return;
+        startAfterPermission = false;
         handler.removeCallbacks(applyStreamChanges);
         pendingStreamChanges = false;
         rejectedPreviewGeneration = CameraStreamService.streamGeneration;
@@ -1231,6 +1297,7 @@ public final class MainActivity extends Activity {
     }
 
     private void stopServiceNow() {
+        startAfterPermission = false;
         handler.removeCallbacks(applyStreamChanges);
         pendingStreamChanges = false;
         previewEpoch++;
@@ -1276,16 +1343,29 @@ public final class MainActivity extends Activity {
         } else if (error.length() > 0) {
             tvDetail.setText(error);
         } else if (running) {
-            tvDetail.setText(String.format(Locale.US,
-                    "%s · %d×%d · %d fps · %d 连接",
+            String detail = String.format(Locale.US,
+                    "%s · %d×%d · %d fps",
                     CameraStreamService.cameraLabel,
                     CameraStreamService.videoWidth, CameraStreamService.videoHeight,
-                    CameraStreamService.measuredFps,
-                    CameraStreamService.rtspClients + CameraStreamService.httpClients));
+                    CameraStreamService.measuredFps);
+            if (Prefs.mode() != Prefs.MODE_LOCAL) detail += " · "
+                    + (CameraStreamService.rtspClients + CameraStreamService.httpClients) + " 连接";
+            tvDetail.setText(detail);
         } else {
-            tvDetail.setText(R.string.detail_idle);
+            tvDetail.setText(Prefs.mode() == Prefs.MODE_LOCAL ? "仅在本机保存录像" : getString(R.string.detail_idle));
         }
 
+        String recording = CameraStreamService.recordingStatus;
+        if (!running && !CameraStreamService.recordingFailed) {
+            recording = Prefs.recordingMode() == 0 ? "录像已关闭"
+                    : (Prefs.recordingMode() == 1 ? "连续录像 · 待启动" : "事件录像 · 待启动");
+        }
+        tvRecordingStatus.setText(recording);
+        tvRecordingStatus.setTextColor(getResources().getColor(CameraStreamService.recordingFailed
+                ? R.color.danger : R.color.on_surface_variant));
+        String event = CameraStreamService.lastEvent;
+        tvLastEvent.setVisibility(event == null || event.length() == 0 ? View.GONE : View.VISIBLE);
+        tvLastEvent.setText(event == null ? "" : "最近事件：" + event);
         refreshPreview(running);
         CameraCatalog.Entry active = CameraStreamService.activeCamera;
         if (active != lastActiveCamera) {
@@ -1355,23 +1435,23 @@ public final class MainActivity extends Activity {
 
 
     private void refreshAddresses() {
-        String ip = NetUtils.localIp();
-        int mode = Prefs.getInt(Prefs.KEY_MODE, Prefs.MODE_BOTH);
-        rowRtsp.setEnabled(mode != Prefs.MODE_MJPEG);
-        rowMjpeg.setEnabled(mode != Prefs.MODE_RTSP);
-        rowSnapshot.setEnabled(mode != Prefs.MODE_RTSP);
-        rowRtsp.setAlpha(mode == Prefs.MODE_MJPEG ? 0.5f : 1f);
-        rowMjpeg.setAlpha(mode == Prefs.MODE_RTSP ? 0.5f : 1f);
-        rowSnapshot.setAlpha(mode == Prefs.MODE_RTSP ? 0.5f : 1f);
+        boolean rtsp = Prefs.needRtsp(), mjpeg = Prefs.needMjpeg();
+        String ip = rtsp || mjpeg ? NetUtils.localIp() : "";
+        rowRtsp.setEnabled(rtsp);
+        rowMjpeg.setEnabled(mjpeg);
+        rowSnapshot.setEnabled(mjpeg);
+        rowRtsp.setAlpha(rtsp ? 1f : 0.5f);
+        rowMjpeg.setAlpha(mjpeg ? 1f : 0.5f);
+        rowSnapshot.setAlpha(mjpeg ? 1f : 0.5f);
 
-        if (mode == Prefs.MODE_MJPEG) {
+        if (!rtsp) {
             tvRtsp.setText(getString(R.string.address_disabled));
         } else {
             tvRtsp.setText(String.format(Locale.US, "rtsp://%s:%d/live", ip,
                     CameraStreamService.RTSP_PORT));
         }
 
-        if (mode == Prefs.MODE_RTSP) {
+        if (!mjpeg) {
             tvMjpeg.setText(getString(R.string.address_disabled));
             tvSnapshot.setText(getString(R.string.address_disabled));
         } else {

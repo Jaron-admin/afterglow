@@ -34,6 +34,9 @@ public final class H264Encoder {
 
         /** SPS / PPS 就绪（DESCRIBE 的 SDP 里要用） */
         void onCodecConfig(byte[] sps, byte[] pps);
+
+        /** Actual codec output format including CSD, used by the MP4 muxer. */
+        void onOutputFormat(MediaFormat format);
     }
 
     private MediaCodec codec;
@@ -49,6 +52,10 @@ public final class H264Encoder {
 
     private Listener listener;
     private volatile boolean started;
+    private boolean outputEnded;
+    private boolean eosRequested;
+    private long lastOutputPtsUs = Long.MIN_VALUE;
+    private long lastInputPtsUs;
 
     private byte[] sps;
     private byte[] pps;
@@ -58,6 +65,11 @@ public final class H264Encoder {
         this.height = height;
         this.listener = listener;
         this.bufferInfo = new MediaCodec.BufferInfo();
+        outputEnded = false;
+        eosRequested = false;
+        lastOutputPtsUs = Long.MIN_VALUE;
+        lastInputPtsUs = 0;
+        sps = pps = null;
 
         List<MediaCodecInfo> encoders = listAvcEncoders();
         if (encoders.isEmpty()) {
@@ -180,9 +192,10 @@ public final class H264Encoder {
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
         format.setInteger(MediaFormat.KEY_FRAME_RATE, fps);
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
+        if (Build.VERSION.SDK_INT >= 29) format.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
 
-        // 不设 KEY_PROFILE：部分 ROM 在 configure 阶段硬塞 profile 会直接返回 0x80001001，
-        // 交给编码器自选默认值最稳（H.264 默认就是 baseline/main，HA 完全能解）。
+        // Some old ROMs reject a forced profile. Keep their supported default, but check
+        // actual output slice types/timestamps before handing samples to an old MP4 muxer.
 
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         codec.start();
@@ -218,33 +231,34 @@ public final class H264Encoder {
         if (!started) {
             return;
         }
-        try {
-            int inIndex = codec.dequeueInputBuffer(5000);
-            if (inIndex >= 0) {
-                ByteBuffer in = (Build.VERSION.SDK_INT >= 21)
-                        ? codec.getInputBuffer(inIndex)
-                        : inputBuffers[inIndex];
-                if (in != null) {
-                    in.clear();
-                    Nv21Converter.convert(nv21, convBuf, width, height, targetLayout);
-                    in.put(convBuf);
-                    codec.queueInputBuffer(inIndex, 0, convBuf.length, ptsUs, 0);
-                }
+        int inIndex = codec.dequeueInputBuffer(5000);
+        if (inIndex >= 0) {
+            ByteBuffer in = (Build.VERSION.SDK_INT >= 21)
+                    ? codec.getInputBuffer(inIndex)
+                    : inputBuffers[inIndex];
+            if (in == null || in.capacity() < convBuf.length) {
+                throw new IllegalStateException("AVC encoder input buffer is too small");
             }
-            drain();
-        } catch (IllegalStateException e) {
-            Log.w(TAG, "encode: " + e);
+            in.clear();
+            Nv21Converter.convert(nv21, convBuf, width, height, targetLayout);
+            in.put(convBuf);
+            codec.queueInputBuffer(inIndex, 0, convBuf.length, ptsUs, 0);
+            lastInputPtsUs = ptsUs;
         }
+        drain(0);
     }
 
-    private void drain() {
+    private void drain(long timeoutUs) {
         while (true) {
-            int outIndex = codec.dequeueOutputBuffer(bufferInfo, 0);
+            int outIndex = codec.dequeueOutputBuffer(bufferInfo, timeoutUs);
+            timeoutUs = 0;
             if (outIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 return;
             }
             if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                readCsdFromFormat(codec.getOutputFormat());
+                MediaFormat format = codec.getOutputFormat();
+                readCsdFromFormat(format);
+                if (listener != null) listener.onOutputFormat(format);
                 continue;
             }
             if (outIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
@@ -257,25 +271,43 @@ public final class H264Encoder {
                 continue;
             }
 
-            ByteBuffer out = (Build.VERSION.SDK_INT >= 21)
-                    ? codec.getOutputBuffer(outIndex)
-                    : outputBuffers[outIndex];
+            try {
+                ByteBuffer out = (Build.VERSION.SDK_INT >= 21)
+                        ? codec.getOutputBuffer(outIndex)
+                        : outputBuffers[outIndex];
+                if (bufferInfo.size > 0) {
+                    if (out == null || bufferInfo.offset < 0
+                            || bufferInfo.size > out.capacity() - bufferInfo.offset) {
+                        throw new IllegalStateException("AVC encoder output buffer is invalid");
+                    }
+                    byte[] data = new byte[bufferInfo.size];
+                    ByteBuffer view = out.duplicate();
+                    view.clear();
+                    view.position(bufferInfo.offset);
+                    view.limit(bufferInfo.offset + bufferInfo.size);
+                    view.get(data);
 
-            if (out != null && bufferInfo.size > 0) {
-                byte[] data = new byte[bufferInfo.size];
-                out.position(bufferInfo.offset);
-                out.limit(bufferInfo.offset + bufferInfo.size);
-                out.get(data, 0, bufferInfo.size);
-
-                boolean config = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
-                if (config) {
-                    parseParameterSets(data);
-                } else if (listener != null) {
-                    boolean key = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
-                    listener.onEncodedFrame(data, bufferInfo.presentationTimeUs, key);
+                    boolean config = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
+                    if (config) {
+                        parseParameterSets(data);
+                    } else {
+                        validateVideoSample(data, bufferInfo.presentationTimeUs, lastOutputPtsUs,
+                                Build.VERSION.SDK_INT < 25);
+                        lastOutputPtsUs = bufferInfo.presentationTimeUs;
+                        if (listener != null) {
+                            boolean key = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
+                            listener.onEncodedFrame(data, bufferInfo.presentationTimeUs, key);
+                        }
+                    }
                 }
+            } finally {
+                codec.releaseOutputBuffer(outIndex, false);
             }
-            codec.releaseOutputBuffer(outIndex, false);
+            if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                outputEnded = true;
+                if (!eosRequested) throw new IllegalStateException("AVC encoder ended unexpectedly");
+                return;
+            }
         }
     }
 
@@ -393,11 +425,40 @@ public final class H264Encoder {
     }
 
     public void stop() {
+        boolean drainRequired = started && codec != null;
         started = false;
-        releaseCodec();
-        inputBuffers = null;
-        outputBuffers = null;
-        Log.i(TAG, "stopped");
+        RuntimeException stopFailure = null;
+        try {
+            if (drainRequired) {
+                long deadline = System.nanoTime() + 2_000_000_000L;
+                boolean eosQueued = false;
+                while (!outputEnded && System.nanoTime() < deadline) {
+                    if (!eosQueued) {
+                        int index = codec.dequeueInputBuffer(5_000);
+                        if (index >= 0) {
+                            codec.queueInputBuffer(index, 0, 0, lastInputPtsUs,
+                                    MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            eosRequested = true;
+                            eosQueued = true;
+                        }
+                    }
+                    drain(10_000);
+                    if (!outputEnded) Thread.sleep(1);
+                }
+                if (!outputEnded) throw new IllegalStateException("AVC encoder EOS drain timed out");
+            }
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            stopFailure = new IllegalStateException("AVC encoder stop interrupted", failure);
+        } catch (RuntimeException failure) {
+            stopFailure = failure;
+        } finally {
+            releaseCodec();
+            inputBuffers = null;
+            outputBuffers = null;
+            Log.i(TAG, "stopped");
+        }
+        if (stopFailure != null) throw stopFailure;
     }
 
     private void releaseCodec() {
@@ -411,6 +472,58 @@ public final class H264Encoder {
             } catch (Throwable ignored) {
             }
             codec = null;
+        }
+    }
+
+    static void validateVideoSample(byte[] data, long ptsUs, long previousPtsUs, boolean oldMuxer) {
+        if (previousPtsUs != Long.MIN_VALUE && ptsUs < previousPtsUs) {
+            throw new IllegalStateException("AVC encoder returned reordered timestamps");
+        }
+        if (!oldMuxer) return;
+        for (int[] nal : splitAnnexB(data, data.length)) {
+            if (nal[1] < 1) continue;
+            int type = data[nal[0]] & 31;
+            if (type != 1 && type != 2 && type != 5) continue;
+            SliceBits bits = new SliceBits(data, nal[0] + 1, nal[0] + nal[1]);
+            bits.unsignedExpGolomb(); // first_mb_in_slice
+            int sliceType = bits.unsignedExpGolomb();
+            if (sliceType > 9) throw new IllegalStateException("Invalid AVC slice type");
+            if (sliceType % 5 == 1) {
+                throw new IllegalStateException("This device's MP4 muxer cannot store AVC B-frames");
+            }
+        }
+    }
+
+    /** Only reads the two leading slice-header fields, skipping RBSP emulation prevention. */
+    private static final class SliceBits {
+        final byte[] data;
+        final int end;
+        int offset, bitsLeft, value, zeros;
+        SliceBits(byte[] data, int offset, int end) {
+            this.data = data; this.offset = offset; this.end = end;
+        }
+        int bit() {
+            if (bitsLeft == 0) {
+                if (offset >= end) throw new IllegalStateException("Truncated AVC slice header");
+                value = data[offset++] & 255;
+                if (zeros >= 2 && value == 3) {
+                    if (offset >= end) throw new IllegalStateException("Truncated AVC escape sequence");
+                    value = data[offset++] & 255;
+                    zeros = 0;
+                }
+                zeros = value == 0 ? zeros + 1 : 0;
+                bitsLeft = 8;
+            }
+            return (value >> --bitsLeft) & 1;
+        }
+        int unsignedExpGolomb() {
+            int leading = 0;
+            while (bit() == 0) {
+                if (++leading >= 31) throw new IllegalStateException("Invalid AVC Exp-Golomb value");
+            }
+            int suffix = 0;
+            for (int i = 0; i < leading; i++) suffix = (suffix << 1) | bit();
+            return ((1 << leading) - 1) + suffix;
         }
     }
 

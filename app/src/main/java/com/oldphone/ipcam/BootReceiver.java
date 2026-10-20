@@ -41,6 +41,7 @@ public final class BootReceiver extends BroadcastReceiver {
             Log.i(TAG, "auto start on boot");
         } catch (Throwable t) {
             Log.e(TAG, "boot start failed", t);
+            CameraStreamService.lastError = "系统阻止了开机启动，请打开余光后手动开始";
         }
     }
 }

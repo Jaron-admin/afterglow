@@ -3,6 +3,7 @@ package com.oldphone.ipcam;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
@@ -11,7 +12,11 @@ import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import java.io.File;
@@ -23,8 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 查看局域网内另一台设备（或本机）的实时画面。
  *
  * 两条路：
- *   - 对方开着 MJPEG → {@link MjpegClient} 自己切帧，延迟最低、最可控；
- *   - 对方只开 RTSP → 交给系统 MediaPlayer（Android 自带 RTSP 支持）。
+ *   - MJPEG → 无声图像；
+ *   - RTSP → 交给系统 MediaPlayer，发送端开启麦克风时可带声音。
  *
  * 两条路都会自动重连：对方刚点「开始推流」时 RTSP 端口还没 listen，
  * 或者 Wi-Fi 抖动导致 socket 断掉，都不应该让用户看到永久失败页。
@@ -60,6 +65,7 @@ public final class ViewerActivity extends Activity {
     private int httpPort;
     private int rtspPort;
     private boolean rtspOnly;
+    private boolean useRtsp;
 
     /** 当前会话是否在前台；onPause 后不再重连 */
     private boolean resumed;
@@ -90,6 +96,7 @@ public final class ViewerActivity extends Activity {
 
         ip = getIntent().getStringExtra(EXTRA_IP);
         rtspOnly = getIntent().getBooleanExtra(EXTRA_RTSP_ONLY, false);
+        useRtsp = rtspOnly || (savedInstanceState != null && savedInstanceState.getBoolean("use_rtsp", false));
         httpPort = getIntent().getIntExtra(EXTRA_HTTP_PORT, CameraStreamService.HTTP_PORT);
         rtspPort = getIntent().getIntExtra(EXTRA_RTSP_PORT, CameraStreamService.RTSP_PORT);
 
@@ -98,6 +105,8 @@ public final class ViewerActivity extends Activity {
         tvMessage = (TextView) findViewById(R.id.tvMessage);
         tvInfo = (TextView) findViewById(R.id.tvInfo);
         tvTitle = (TextView) findViewById(R.id.tvTitle);
+        addPlaybackSelector();
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
 
         String label = getIntent().getStringExtra(EXTRA_LABEL);
         tvTitle.setText(ip + (label == null || label.length() == 0 ? "" : " · " + label));
@@ -114,7 +123,7 @@ public final class ViewerActivity extends Activity {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
                 videoHolder = holder;
-                if (resumed && rtspOnly) {
+                if (resumed && useRtsp) {
                     playRtsp();
                 }
             }
@@ -126,6 +135,7 @@ public final class ViewerActivity extends Activity {
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
                 videoHolder = null;
+                releasePlayer();
             }
         });
 
@@ -141,7 +151,7 @@ public final class ViewerActivity extends Activity {
         super.onResume();
         resumed = true;
         attempt = 0;
-        if (rtspOnly) {
+        if (useRtsp) {
             startRtsp();
         } else {
             startMjpeg();
@@ -154,6 +164,52 @@ public final class ViewerActivity extends Activity {
                 }
             }, 4000);
         }
+    }
+
+    private void addPlaybackSelector() {
+        RadioGroup selector = new RadioGroup(this);
+        selector.setOrientation(RadioGroup.HORIZONTAL);
+        selector.setPadding(dp(8), 0, dp(8), 0);
+        selector.setBackgroundColor(0xff16181d);
+        RadioButton silent = new RadioButton(this);
+        silent.setId(View.generateViewId());
+        silent.setText("MJPEG · 无声");
+        silent.setTextSize(13);
+        silent.setTextColor(0xfff1f3f4);
+        silent.setEnabled(!rtspOnly);
+        silent.setAlpha(rtspOnly ? 0.4f : 1f);
+        final RadioButton av = new RadioButton(this);
+        av.setId(View.generateViewId());
+        av.setText("RTSP · 可带声音");
+        av.setTextSize(13);
+        av.setTextColor(0xfff1f3f4);
+        selector.addView(silent, new RadioGroup.LayoutParams(0, dp(48), 1));
+        selector.addView(av, new RadioGroup.LayoutParams(0, dp(48), 1));
+        selector.check(useRtsp ? av.getId() : silent.getId());
+        LinearLayout root = (LinearLayout) tvInfo.getParent();
+        root.addView(selector, 1, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        tvInfo.setSingleLine(false);
+        selector.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(RadioGroup group, int checkedId) {
+                boolean nextRtsp = checkedId == av.getId();
+                if (nextRtsp == useRtsp) return;
+                stopAll();
+                useRtsp = nextRtsp;
+                attempt = 0;
+                showMessage(getString(R.string.viewer_connecting));
+                if (useRtsp) startRtsp(); else startMjpeg();
+            }
+        });
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putBoolean("use_rtsp", useRtsp);
+        super.onSaveInstanceState(state);
     }
 
     /** 调试用：把查看页渲染成 PNG（锁屏状态下也能验证画面） */
@@ -209,11 +265,11 @@ public final class ViewerActivity extends Activity {
     }
 
     private void startMjpeg() {
-        if (!resumed) {
+        if (!resumed || useRtsp) {
             return;
         }
         final String url = httpUrl();
-        tvInfo.setText(url);
+        tvInfo.setText("MJPEG 为无声画面，听声音请切换 RTSP\n" + url);
 
         svVideo.setVisibility(View.GONE);
         ivFrame.setVisibility(View.VISIBLE);
@@ -290,8 +346,9 @@ public final class ViewerActivity extends Activity {
     }
 
     private void startRtsp() {
+        if (!resumed || !useRtsp) return;
         final String url = rtspUrl();
-        tvInfo.setText(url);
+        tvInfo.setText("声音需发送端开启麦克风；音量由系统媒体音量控制\n" + url);
 
         svVideo.setVisibility(View.VISIBLE);
         ivFrame.setVisibility(View.GONE);
@@ -303,7 +360,7 @@ public final class ViewerActivity extends Activity {
     }
 
     private void playRtsp() {
-        if (!resumed) {
+        if (!resumed || !useRtsp) {
             return;
         }
         final SurfaceHolder holder = videoHolder;
@@ -316,12 +373,13 @@ public final class ViewerActivity extends Activity {
         try {
             final MediaPlayer mp = new MediaPlayer();
             player = mp;
+            mp.setAudioStreamType(AudioManager.STREAM_MUSIC);
             mp.setDataSource(url);
             mp.setDisplay(holder);
             mp.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
                 @Override
                 public void onPrepared(MediaPlayer m) {
-                    if (m != player || !resumed) {
+                    if (m != player || !resumed || !useRtsp) {
                         return;
                     }
                     attempt = 0;
@@ -353,6 +411,11 @@ public final class ViewerActivity extends Activity {
                         retryRtsp(url);
                     }
                     return true;
+                }
+            });
+            mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                @Override public void onCompletion(MediaPlayer mediaPlayer) {
+                    if (mediaPlayer == player && resumed && useRtsp) retryRtsp(url);
                 }
             });
             mp.prepareAsync();

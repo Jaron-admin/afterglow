@@ -20,6 +20,21 @@ public final class Prefs {
     public static final String KEY_PASS = "pass";
     public static final String KEY_CAMERA = "camera_id";
     public static final String KEY_ROTATION = "rotation";
+    public static final String KEY_RECORDING = "recording_mode";
+    public static final String KEY_STORAGE = "recording_target";
+    public static final String KEY_QUOTA = "recording_quota_gib";
+    public static final String KEY_MICROPHONE = "microphone";
+    public static final String KEY_MOTION = "motion_detection";
+    public static final String KEY_SOUND = "sound_detection";
+    public static final String KEY_SENSITIVITY = "detection_sensitivity";
+    public static final String KEY_SEGMENT = "recording_segment_seconds";
+    public static final String KEY_PRE_ROLL = "recording_pre_seconds";
+    public static final String KEY_POST_ROLL = "recording_post_seconds";
+    public static final String KEY_RETENTION = "recording_retention_days";
+    public static final String KEY_RESERVE = "recording_reserve_mib";
+    public static final String KEY_SEGMENT_SIZE = "recording_segment_mib";
+    public static final String KEY_LOOP = "recording_loop";
+    public static final String KEY_RECORD_AUDIO = "recording_audio";
     private static final String KEY_CAMERA_KEY = "camera_key_v2";
     private static final String KEY_OUTPUT_WIDTH = "output_width";
     private static final String KEY_OUTPUT_HEIGHT = "output_height";
@@ -56,6 +71,7 @@ public final class Prefs {
     public static final int MODE_RTSP = 1;
     /** 仅 MJPEG（浏览器直接看，兼容性最好） */
     public static final int MODE_MJPEG = 2;
+    public static final int MODE_LOCAL = 3;
 
     /** 可选分辨率，索引与界面下拉框一一对应 */
     public static final int[][] RESOLUTIONS = {
@@ -83,6 +99,7 @@ public final class Prefs {
             "RTSP + MJPEG",
             "RTSP",
             "MJPEG",
+            "仅本地录像",
     };
 
     private static SharedPreferences sp;
@@ -157,7 +174,7 @@ public final class Prefs {
 
     public static int mode() {
         int m = getInt(KEY_MODE, MODE_BOTH);
-        return (m < 0 || m > 2) ? MODE_BOTH : m;
+        return (m < 0 || m > MODE_LOCAL) ? MODE_BOTH : m;
     }
 
     public static int cameraChoice() {
@@ -236,5 +253,31 @@ public final class Prefs {
     public static boolean needMjpeg() {
         int m = mode();
         return m == MODE_BOTH || m == MODE_MJPEG;
+    }
+
+    public static int recordingMode() {
+        int mode = getInt(KEY_RECORDING, 0);
+        return mode >= 0 && mode <= 2 ? mode : 0;
+    }
+    public static boolean microphoneEnabled() { return getBool(KEY_MICROPHONE, false); }
+    public static boolean motionEnabled() { return getBool(KEY_MOTION, true); }
+    public static boolean soundEnabled() {
+        return microphoneEnabled() && getBool(KEY_SOUND, false);
+    }
+    public static int sensitivity() {
+        return Math.max(0, Math.min(2, getInt(KEY_SENSITIVITY, 1)));
+    }
+    public static String recordingTarget() { return getStr(KEY_STORAGE, ""); }
+    public static long recordingQuota() {
+        return Math.max(1, Math.min(1024, getInt(KEY_QUOTA, 2))) * 1024L * 1024L * 1024L;
+    }
+    public static RecordingOptions recordingOptions() {
+        return new RecordingOptions(Math.max(1, recordingMode()),
+                getInt(KEY_SEGMENT, 300), getInt(KEY_PRE_ROLL, 5),
+                getInt(KEY_POST_ROLL, 15), getInt(KEY_RETENTION, 0), recordingQuota(),
+                getInt(KEY_RESERVE, 256) * 1024L * 1024L,
+                getInt(KEY_SEGMENT_SIZE, 256) * 1024L * 1024L,
+                getBool(KEY_LOOP, true),
+                microphoneEnabled() && getBool(KEY_RECORD_AUDIO, true));
     }
 }

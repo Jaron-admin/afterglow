@@ -20,4 +20,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Codec discovery tests failed.' }
     & "$PSScriptRoot\viewer\run.ps1" -JavaHome $JavaHome
     if ($LASTEXITCODE -ne 0) { throw 'Viewer tests failed.' }
+    & "$PSScriptRoot\rtsp-audio\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'RTSP audio tests failed.' }
+    & "$PSScriptRoot\detection\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
+    if ($LASTEXITCODE -ne 0) { throw 'Detection/audio tests failed.' }
+    & "$PSScriptRoot\recording\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
+    if ($LASTEXITCODE -ne 0) { throw 'Recording tests failed.' }
 } finally { Pop-Location }

@@ -1,4 +1,49 @@
-# Validation — Afterglow 1.2.1
+# Validation — Afterglow 1.3.0
+
+Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
+
+- `tests/run.ps1`: all suites passed, including existing geometry/camera/lifecycle/browser
+  regressions and new recording, detector, microphone, codec EOS and dual-track RTSP tests.
+  Recording tests execute the real queue, worker, timeline and file index, substituting
+  Android MediaMuxer and disk failure boundaries. They cover keyframe starts, common AV
+  timestamps, pre/post-roll, merged events, configurable segment limits, quota/retention,
+  locked/foreign/partial protection, slow-disk failure, full disks and read-only storage.
+- Optional `tests/rtsp-audio/run-ffmpeg.ps1`: passed with real FFmpeg. Each transport
+  decoded five seconds of synthetic H.264/AAC: TCP 63 video frames / 79 audio frames,
+  UDP 62 / 79. Both decoded 320×240 video and 16000 Hz mono audio, producing 160000 bytes
+  of nonzero PCM; FFmpeg warning/error logs were empty. This uses the production
+  RTSP server and Annex-B splitter. Joining a live GOP explains fewer than 75 video frames.
+- Gradle `assembleDebug lintDebug`: successful, 0 errors and 99 warnings.
+- `build-apk.ps1`: successful; version 1.3.0 / code 5, minSdk 19, targetSdk 33,
+  package `com.oldphone.ipcam`. v1/v2/v3 signatures verified; certificate remains
+  `dd4508eb3d4c3698c4be1c828b1171c250f0820cbdc5caf2cb6a8e9198f7c239`.
+- Independent reviews identified full-disk management being gated on a write probe,
+  event-marker ownership across segments, and FFmpeg's explicit `RTP/AVP/UDP` transport
+  header. Regression tests cover these fixes. No signing material or real recordings
+  are included in the repository.
+
+No physical camera or microphone was opened during these tests. Native Android
+MediaMuxer output, the built-in Android player, real sensor/microphone latency and
+long-term clock drift are not established by the JVM or FFmpeg transport tests.
+
+## Device acceptance — 1.3.0
+
+1. Upgrade with the existing signature; verify recording and microphone remain opt-in.
+2. Record continuous MP4 with microphone off/on, stop normally, and play/export completed
+   clips; confirm upright cropped output and audible, synchronized sound.
+3. Test a short custom segment, a long segment, size limit, total quota, reserve,
+   retention and stop/loop policy. Locked clips must survive automatic cleanup.
+4. Use event mode with pre-roll zero and nonzero, repeated motion/sound and custom
+   post-roll. Check trigger labels in the correct segment, including segment boundaries.
+5. Remove/reinsert or fill the selected SD card. Recording must pause visibly, network
+   streams must remain available, and completed files must remain readable/exportable.
+   Read-only media must be readable but reject write/delete.
+6. Toggle microphone and recording while running, rotate/lock/calibrate, and rapidly
+   stop/restart. Confirm old sessions release resources and never write into new clips.
+7. Verify long-running screen-off behavior and device-specific background restrictions
+   on the intended Android 4.4 and newer phones. Power loss can lose the active segment.
+
+# Previous validation — Afterglow 1.2.1
 
 Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
 

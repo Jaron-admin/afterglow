@@ -7,7 +7,7 @@ Push-Location (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 try {
     New-Item -ItemType Directory -Force build\output-tests | Out-Null
     $sourceRoot = 'app\src\main\java\com\oldphone\ipcam'
-    & (Join-Path $JavaHome 'bin\javac.exe') -encoding UTF-8 -cp $AndroidJar -d build\output-tests "$sourceRoot\FrameGeometry.java" "$sourceRoot\Prefs.java" tests\output\PrefsOutputDefaultsTest.java
+    & (Join-Path $JavaHome 'bin\javac.exe') -encoding UTF-8 -cp $AndroidJar -d build\output-tests "$sourceRoot\FrameGeometry.java" "$sourceRoot\RecordingOptions.java" "$sourceRoot\Prefs.java" tests\output\PrefsOutputDefaultsTest.java
     if ($LASTEXITCODE -ne 0) { throw 'Output preference test compilation failed.' }
     & (Join-Path $JavaHome 'bin\java.exe') -cp "build\output-tests;$AndroidJar" com.oldphone.ipcam.PrefsOutputDefaultsTest
     if ($LASTEXITCODE -ne 0) { throw 'Output preference tests failed.' }

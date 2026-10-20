@@ -19,5 +19,9 @@ try {
     foreach ($apiLevel in @(19, 21)) {
         & $java "-Dandroid.sdk=$apiLevel" -cp "build\codec-tests;build\codec-test-production;$AndroidJar" com.oldphone.ipcam.CodecDiscoveryTest
         if ($LASTEXITCODE -ne 0) { throw "Codec discovery test failed on API $apiLevel" }
+        & $java "-Dandroid.sdk=$apiLevel" -cp "build\codec-tests;build\codec-test-production;$AndroidJar" com.oldphone.ipcam.EncoderLifecycleTest
+        if ($LASTEXITCODE -ne 0) { throw "Encoder lifecycle test failed on API $apiLevel" }
     }
+    & $java -cp "build\codec-tests;build\codec-test-production;$AndroidJar" com.oldphone.ipcam.VideoSampleSafetyTest
+    if ($LASTEXITCODE -ne 0) { throw 'Video sample safety tests failed.' }
 } finally { Pop-Location }

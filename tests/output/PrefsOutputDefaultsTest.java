@@ -28,6 +28,15 @@ public final class PrefsOutputDefaultsTest {
         size(900, 1600, "saved custom portrait overrides old index");
         if (Prefs.outputLayout() != 2) throw new AssertionError("custom layout must remain selected");
         memory.values.clear();
+        RecordingOptions recording = Prefs.recordingOptions();
+        if (Prefs.recordingMode() != 0 || Prefs.microphoneEnabled()
+                || recording.withAudio || recording.segmentSeconds != 300)
+            throw new AssertionError("upgrade must opt in to recording/microphone; default segments are five minutes");
+        memory.values.put(Prefs.KEY_MICROPHONE, true);
+        memory.values.put(Prefs.KEY_RECORD_AUDIO, false);
+        if (Prefs.recordingOptions().withAudio)
+            throw new AssertionError("RTSP microphone may stay on while recorded audio is disabled");
+        memory.values.clear();
         Prefs.setOutputSize(640, 480);
         size(640, 480, "saved 1.2 output remains unchanged");
         field.set(null, null);

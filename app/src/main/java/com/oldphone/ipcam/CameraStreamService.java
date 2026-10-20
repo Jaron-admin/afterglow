@@ -7,6 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.media.MediaCodec;
+import android.media.MediaFormat;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
@@ -60,6 +63,9 @@ public final class CameraStreamService extends Service {
     /** Last stable physical pose, even while correction is locked to a saved pose. */
     public static volatile int deviceOrientation;
     public static volatile CameraCatalog.Entry activeCamera;
+    public static volatile String recordingStatus = "录像已关闭";
+    public static volatile boolean recordingFailed;
+    public static volatile String lastEvent = "";
 
     // A replacement service joins the same worker until its predecessor has released
     // its resources. Native camera ownership cannot overlap across service instances.
@@ -85,6 +91,10 @@ public final class CameraStreamService extends Service {
     private H264Encoder encoder;
     private RtspServer rtspServer;
     private MjpegServer mjpegServer;
+    private RecordingManager recorder;
+    private AudioCapture audioCapture;
+    private MotionDetector motionDetector;
+    private int detectionSensitivity;
     private PowerManager.WakeLock wakeLock;
 
     private int outputWidth;
@@ -201,6 +211,7 @@ public final class CameraStreamService extends Service {
             }
         } else if (ACTION_RECONFIGURE.equals(action)) {
             refreshOrientationSettings();
+            if (running && !promoteForeground()) return START_NOT_STICKY;
             lifecycle.reconfigure();
             if (!running) {
                 stopSelfResult(startId);
@@ -208,7 +219,7 @@ public final class CameraStreamService extends Service {
             }
         } else if (ACTION_START.equals(action) || action == null) {
             refreshOrientationSettings();
-            startForegroundCompat();
+            if (!promoteForeground()) return START_NOT_STICKY;
             if (!orientationMonitoring) {
                 orientationMonitor.start();
                 orientationMonitoring = true;
@@ -258,6 +269,8 @@ public final class CameraStreamService extends Service {
 
     /** Worker-only. Capture callbacks borrow data only for their synchronous duration. */
     private void openCaptureAndServers(final long generation) throws Exception {
+        if (Prefs.mode() == Prefs.MODE_LOCAL && Prefs.recordingMode() == 0)
+            throw new IOException("仅本地模式需要先开启录像");
         outputWidth = Prefs.outputWidth();
         outputHeight = Prefs.outputHeight();
         fps = Prefs.fps();
@@ -300,28 +313,58 @@ public final class CameraStreamService extends Service {
     }
 
     private void startServers(final long generation) throws Exception {
+        final boolean microphone = Prefs.microphoneEnabled();
+        final boolean detectSound = Prefs.soundEnabled();
+        detectionSensitivity = Prefs.sensitivity();
+        final int sensitivity = detectionSensitivity;
+        final SoundDetector soundDetector = detectSound ? new SoundDetector() : null;
+        motionDetector = Prefs.motionEnabled() ? new MotionDetector() : null;
+        recordingFailed = false;
+        lastEvent = "";
+        recordingStatus = Prefs.recordingMode() == 0 ? "录像已关闭" : "准备录像";
+        if (Prefs.recordingMode() != 0) {
+            recorder = new RecordingManager(this, Prefs.recordingTarget(),
+                    Prefs.recordingOptions(), new RecordingManager.Listener() {
+                @Override public void onStatus(String status, boolean failed) {
+                    synchronized (lifecycle) {
+                        if (isSessionCurrent(generation)) {
+                            recordingStatus = status;
+                            recordingFailed = failed;
+                        }
+                    }
+                }
+            });
+        }
+        final RecordingManager sessionRecorder = recorder;
         if (Prefs.needRtsp()) {
+            rtspServer = new RtspServer(RTSP_PORT);
+            rtspServer.setVideoInfo(outputWidth, outputHeight, bitrate);
+            if (microphone) rtspServer.setAudioConfig(AudioCapture.SAMPLE_RATE,
+                    AudioCapture.CHANNELS, AudioCapture.audioSpecificConfig());
+        }
+        final RtspServer sessionRtsp = rtspServer;
+        if (sessionRtsp != null || sessionRecorder != null) {
             try {
-                rtspServer = new RtspServer(RTSP_PORT);
-                rtspServer.setVideoInfo(outputWidth, outputHeight, bitrate);
                 encoder = new H264Encoder();
                 encoder.start(outputWidth, outputHeight, fps, bitrate, new H264Encoder.Listener() {
                     @Override public void onEncodedFrame(byte[] data, long ptsUs, boolean keyFrame) {
-                        RtspServer server = rtspServer;
-                        if (server != null && isSessionCurrent(generation)) {
-                            server.pushFrame(data, ptsUs, keyFrame);
+                        if (sessionRtsp != null && isSessionCurrent(generation)) {
+                            sessionRtsp.pushFrame(data, ptsUs, keyFrame);
                         }
+                        if (sessionRecorder != null) sessionRecorder.onVideo(data, ptsUs,
+                                keyFrame ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0);
                     }
                     @Override public void onCodecConfig(byte[] sps, byte[] pps) {
-                        RtspServer server = rtspServer;
-                        if (server != null && isSessionCurrent(generation)) {
-                            server.setCodecConfig(sps, pps);
-                        }
+                        if (sessionRtsp != null && isSessionCurrent(generation))
+                            sessionRtsp.setCodecConfig(sps, pps);
+                    }
+                    @Override public void onOutputFormat(MediaFormat format) {
+                        if (sessionRecorder != null) sessionRecorder.setVideoFormat(format);
                     }
                 });
-                rtspServer.start();
+                if (sessionRtsp != null) sessionRtsp.start();
             } catch (Throwable failure) {
-                throw new IOException("RTSP 编码/服务启动失败（" + outputWidth + "×"
+                throw new IOException("视频编码/服务启动失败（" + outputWidth + "×"
                         + outputHeight + "，" + fps + " fps）：" + errorMessage(failure), failure);
             }
         }
@@ -337,9 +380,39 @@ public final class CameraStreamService extends Service {
                 throw new IOException("MJPEG 服务启动失败：" + errorMessage(failure), failure);
             }
         }
-        if (rtspServer == null && mjpegServer == null) {
+        if (microphone) {
+            // Assign before start: startup callbacks can arrive on the audio worker.
+            audioCapture = new AudioCapture();
+            audioCapture.start(new AudioCapture.Listener() {
+                @Override public void onFormat(MediaFormat format) {
+                    if (sessionRecorder != null) sessionRecorder.setAudioFormat(format);
+                }
+                @Override public void onEncodedFrame(byte[] data, long ptsUs) {
+                    if (sessionRtsp != null && isSessionCurrent(generation))
+                        sessionRtsp.pushAudio(data, ptsUs);
+                    if (sessionRecorder != null) sessionRecorder.onAudio(data, ptsUs, 0);
+                }
+                @Override public void onPcm(short[] pcm, int count, long ptsUs) {
+                    if (isSessionCurrent(generation) && soundDetector != null
+                            && soundDetector.update(pcm, count, ptsUs, sensitivity))
+                        detected(sessionRecorder, "声响", ptsUs, generation);
+                }
+                @Override public void onError(String message) {
+                    failCurrentSession(generation, "麦克风采集失败：" + message
+                            + "。关闭麦克风后可继续无声使用");
+                }
+            });
+        }
+        if (rtspServer == null && mjpegServer == null && sessionRecorder == null) {
             throw new IOException("没有可用的视频服务");
         }
+    }
+
+    private void detected(RecordingManager target, String reason, long ptsUs, long generation) {
+        if (!isSessionCurrent(generation)) return;
+        lastEvent = reason + " · " + new java.text.SimpleDateFormat("HH:mm:ss",
+                Locale.getDefault()).format(new java.util.Date());
+        if (target != null) target.trigger(reason, ptsUs);
     }
 
     /** Pure geometry is committed once before both consumers process this frame. */
@@ -378,6 +451,9 @@ public final class CameraStreamService extends Service {
             final FrameGeometry framePlan = geometryForFrame(rawWidth, rawHeight, generation);
             Nv21Transform.render(nv21, framePlan, outputBuffer);
             if (encoder != null) encoder.encode(outputBuffer, now / 1000L);
+            if (motionDetector != null && motionDetector.update(outputBuffer, outputWidth,
+                    outputHeight, now / 1000L, framePlan.revision, detectionSensitivity))
+                detected(recorder, "画面变动", now / 1000L, generation);
 
             // Remote MJPEG/snapshot always receive the cropped fixed-size output.
             if (mjpegServer != null) {
@@ -449,6 +525,29 @@ public final class CameraStreamService extends Service {
         if (oldCapture != null) {
             try { oldCapture.close(); } catch (Throwable failure) { Log.w(TAG, "capture stop", failure); }
         }
+        if (audioCapture != null) {
+            try { audioCapture.close(); } catch (Throwable failure) {
+                Log.w(TAG, "audio stop", failure);
+                if (stateOwner == this) lastError = "麦克风尚未释放：" + errorMessage(failure);
+            }
+            audioCapture = null;
+        }
+        if (encoder != null) {
+            try { encoder.stop(); } catch (Throwable failure) {
+                Log.w(TAG, "encoder stop", failure);
+                if (stateOwner == this) lastError = "视频结束时未能完整排空：" + errorMessage(failure);
+            }
+            encoder = null;
+        }
+        if (recorder != null) {
+            try { recorder.close(); } catch (Throwable failure) { Log.w(TAG, "recording stop", failure); }
+            if (stateOwner == this && recorder.hasFailed()) {
+                recordingFailed = true;
+                recordingStatus = recorder.status();
+            }
+            recorder = null;
+        }
+        motionDetector = null;
         if (rtspServer != null) {
             try { rtspServer.stop(); } catch (Throwable failure) { Log.w(TAG, "rtsp stop", failure); }
             rtspServer = null;
@@ -456,10 +555,6 @@ public final class CameraStreamService extends Service {
         if (mjpegServer != null) {
             try { mjpegServer.stop(); } catch (Throwable failure) { Log.w(TAG, "http stop", failure); }
             mjpegServer = null;
-        }
-        if (encoder != null) {
-            try { encoder.stop(); } catch (Throwable failure) { Log.w(TAG, "encoder stop", failure); }
-            encoder = null;
         }
         releaseWakeLock();
         captureEntry = null;
@@ -477,6 +572,7 @@ public final class CameraStreamService extends Service {
             videoHeight = 0;
             frameGeometry = null;
             activeCamera = null;
+            if (!recordingFailed) recordingStatus = "录像已停止";
         }
         Log.i(TAG, "stopped");
     }
@@ -520,13 +616,32 @@ public final class CameraStreamService extends Service {
         String ip = NetUtils.localIp();
         String address = Prefs.needRtsp()
                 ? String.format(Locale.US, "rtsp://%s:%d/live", ip, RTSP_PORT)
-                : String.format(Locale.US, "http://%s:%d/", ip, HTTP_PORT);
+                : Prefs.needMjpeg() ? String.format(Locale.US, "http://%s:%d/", ip, HTTP_PORT)
+                : "本地录像";
         builder.setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle("余光 / Afterglow 运行中")
                 .setContentText(address)
                 .setOngoing(true)
                 .setContentIntent(pending);
-        startForeground(NOTIFICATION_ID, builder.build());
+        if (Build.VERSION.SDK_INT >= 30) {
+            int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            if (Prefs.microphoneEnabled()) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            startForeground(NOTIFICATION_ID, builder.build(), types);
+        } else {
+            startForeground(NOTIFICATION_ID, builder.build());
+        }
+    }
+
+    private boolean promoteForeground() {
+        try {
+            startForegroundCompat();
+            return true;
+        } catch (RuntimeException failure) {
+            lastError = "无法启动采集服务：" + errorMessage(failure) + "。请打开应用并检查权限";
+            lifecycle.stop();
+            stopSelf();
+            return false;
+        }
     }
 
     private void acquireWakeLock() {
