@@ -39,7 +39,28 @@
 
     <string name="label_camera">摄像头</string>
     <string name="label_rotation">旋转</string>
-    <string name="label_resolution">分辨率</string>
+    <string name="label_resolution">输出分辨率</string>
+    <string name="label_output_layout">输出画幅</string>
+    <string name="camera_auto">自动选择镜头</string>
+    <string name="camera_catalog_waiting">正在读取镜头信息，请稍后校准</string>
+    <string name="camera_front_legacy">前置（自动选择）</string>
+    <string name="camera_back_legacy">后置（自动选择）</string>
+    <string name="camera_unavailable">%1$s（暂不可用）</string>
+    <string name="lock_orientation">锁定当前方向</string>
+    <string name="calibrate_camera">校准摄像头</string>
+    <string name="calibration_reset">恢复自动</string>
+    <string name="orientation_apply_failed">方向设置未应用：%1$s</string>
+    <string name="output_width">输出宽度</string>
+    <string name="output_height">输出高度</string>
+    <string name="apply_output_size">应用</string>
+    <string name="output_dimension_invalid">请输入 16–4096 之间的偶数</string>
+    <string name="output_pixel_limit">总像素不能超过 8294400</string>
+    <string name="output_size_hint">亮区推流，暗区裁掉。输出尺寸不随手机旋转。</string>
+    <string name="geometry_live">完整取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d</string>
+    <string name="geometry_available">镜头可用尺寸 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d · 开启后显示实际取景</string>
+    <string name="geometry_unknown">开启后显示完整输入尺寸与比例\n最终输出 %1$d×%2$d</string>
+    <string-array name="output_layouts"><item>横屏</item><item>竖屏</item><item>自定义</item></string-array>
+    <string-array name="camera_calibration_offsets"><item>自动校正 · 偏移 0°</item><item>手动偏移 90°</item><item>手动偏移 180°</item><item>手动偏移 270°</item></string-array>
     <string name="label_fps">帧率</string>
     <string name="label_bitrate">码率</string>
     <string name="label_mode">输出模式</string>
@@ -55,6 +76,6 @@
     <string name="status_switching">正在切换…</string>
     <string name="address_disabled">未启用</string>
     <string name="help_title">帮助</string>
-    <string name="help_body">将手机与查看设备连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC、Home Assistant 等使用，MJPEG 可用浏览器查看。\n\n镜头、旋转和画质修改后会自动应用，切换时会短暂断开画面。自动模式优先使用后置，打开失败会尝试另一镜头。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。MJPEG 访问验证在输入完成或离开输入框后生效。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="help_body">将手机与查看设备连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC、Home Assistant 等使用，MJPEG 可用浏览器查看。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。MJPEG 访问验证在输入完成或离开输入框后生效。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
 </resources>

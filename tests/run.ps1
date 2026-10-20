@@ -6,6 +6,10 @@ $ErrorActionPreference = 'Stop'
 if (!$JavaHome) { throw 'Set JAVA_HOME or pass -JavaHome with a JDK 17 directory.' }
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    & "$PSScriptRoot\geometry\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Geometry tests failed.' }
+    & "$PSScriptRoot\camera\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
+    if ($LASTEXITCODE -ne 0) { throw 'Camera conversion tests failed.' }
     & (Join-Path $JavaHome 'bin\javac.exe') -encoding UTF-8 -d build\lifecycle-tests app\src\main\java\com\oldphone\ipcam\StreamLifecycle.java tests\java\com\oldphone\ipcam\StreamLifecycleTest.java
     if ($LASTEXITCODE -ne 0) { throw 'Lifecycle test compilation failed.' }
     & (Join-Path $JavaHome 'bin\java.exe') -cp build\lifecycle-tests com.oldphone.ipcam.StreamLifecycleTest

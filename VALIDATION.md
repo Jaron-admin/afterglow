@@ -1,4 +1,44 @@
-# Validation — Afterglow 1.1.0
+# Validation — Afterglow 1.2.0
+
+Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
+
+- `tests/run.ps1`: successful. Includes four sensor/device rotations, fixed output dimensions, centered crop boundaries, independent full-frame vs fused NV21 transforms, V/U ordering, sensor hysteresis/unknown poses/stop-start cancellation, Camera2 plane strides and buffer types, source size choice, exclusive camera reservation with timeout/real-release handoff, and the existing lifecycle, codec discovery, TCP protocol and browser suites.
+- Gradle `assembleDebug lintDebug`: successful, 0 errors and 82 warnings. API21 backends have explicit version boundaries; camera permission rejection is handled explicitly. No lint baseline or blanket suppression was added.
+- `build-apk.ps1`: successful. `Afterglow-1.2.0.apk` is version code 3, package `com.oldphone.ipcam`, minSdk 19, targetSdk 33, label 余光. v1/v2/v3 signatures verified, with the same certificate as 1.1.0.
+- Independent review: direction-monitor resume, Camera2 actual `onClosed` handoff, startup-disconnect races and pending Camera1 cancellation were fixed and re-reviewed with no remaining blockers.
+
+Local Gradle verification reused the ignored official-artifact Maven cache
+described in the 1.1.0 record below; committed repositories are unchanged.
+
+The tests run real pixel transforms, selection/reservation code and network
+protocols. They do **not** execute Android's camera HAL or prove physical-device
+UI rendering, lens availability, hardware encoder behavior, actual sensor
+metadata, or long-running background operation. No APK was installed on a
+physical phone during this revision.
+
+## Device acceptance — 1.2.0
+
+1. Enable the system rotation lock, then hold the phone in all four directions.
+   Confirm the app UI follows; check upright text in both MJPEG and RTSP output.
+2. Choose 1280×720 while holding the phone vertically. Confirm the full portrait
+   input remains visible locally, the top/bottom are shaded, and the remote stream
+   contains only the unshaded crop with exact 1280×720 dimensions.
+3. Rotate to landscape and upside down; confirm output dimensions and connections
+   remain fixed and the crop changes coherently with the preview.
+4. Lock direction, move the phone, leave/reopen the app, then unlock. Confirm both
+   UI orientation and correction pose remain fixed until unlocking.
+5. Calibrate each available front/back lens separately, return to another lens,
+   then restore automatic calibration. Confirm offsets do not leak between lenses.
+6. Test portrait and custom output sizes; reject odd/oversized inputs without
+   changing the saved configuration. Unsupported H.264 configurations must show
+   an error, without silently dropping RTSP.
+7. Rapidly switch lenses and stop/start. Confirm old cameras are released, late
+   callbacks cannot replace the current stream, and a missing/occupied selected
+   camera reports an error instead of silently using a different camera.
+8. Repeat on the intended Android 4.4 and newer target phones; verify physical
+   multi-camera exposure and device-specific screen-off/background policies.
+
+# Previous validation — Afterglow 1.1.0
 
 Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
 

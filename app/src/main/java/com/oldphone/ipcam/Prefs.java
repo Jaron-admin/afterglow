@@ -20,6 +20,13 @@ public final class Prefs {
     public static final String KEY_PASS = "pass";
     public static final String KEY_CAMERA = "camera_id";
     public static final String KEY_ROTATION = "rotation";
+    private static final String KEY_CAMERA_KEY = "camera_key_v2";
+    private static final String KEY_OUTPUT_WIDTH = "output_width";
+    private static final String KEY_OUTPUT_HEIGHT = "output_height";
+    private static final String KEY_OUTPUT_LAYOUT = "output_layout";
+    private static final String KEY_DIRECTION_LOCK = "direction_lock";
+    private static final String KEY_LOCK_DEVICE = "locked_device_angle";
+    private static final String KEY_LOCK_DISPLAY = "locked_display_rotation";
 
     /** 画面旋转（顺时针），索引与 ROTATION_DEGREES 对应 */
     public static final int[] ROTATION_DEGREES = {0, 90, 180, 270};
@@ -131,11 +138,11 @@ public final class Prefs {
     }
 
     public static int width() {
-        return RESOLUTIONS[resIndex()][0];
+        return outputWidth();
     }
 
     public static int height() {
-        return RESOLUTIONS[resIndex()][1];
+        return outputHeight();
     }
 
     public static int fps() {
@@ -159,12 +166,64 @@ public final class Prefs {
     }
 
     public static int rotationIndex() {
-        int r = getInt(KEY_ROTATION, 0);
-        return (r < 0 || r >= ROTATION_DEGREES.length) ? 0 : r;
+        return manualRotationDegrees() / 90;
     }
 
     public static int rotationDegrees() {
-        return ROTATION_DEGREES[rotationIndex()];
+        return manualRotationDegrees();
+    }
+
+    public static String cameraKey() {
+        String legacy = cameraChoice() == CAM_FRONT ? "facing:front"
+                : cameraChoice() == CAM_BACK ? "facing:back" : "auto";
+        return getStr(KEY_CAMERA_KEY, legacy);
+    }
+    public static void setCameraKey(String key) {
+        if (key == null || key.length() == 0) throw new IllegalArgumentException("请选择摄像头");
+        setStr(KEY_CAMERA_KEY, key);
+    }
+    public static int outputWidth() {
+        return getInt(KEY_OUTPUT_WIDTH, RESOLUTIONS[resIndex()][0]);
+    }
+    public static int outputHeight() {
+        return getInt(KEY_OUTPUT_HEIGHT, RESOLUTIONS[resIndex()][1]);
+    }
+    public static void setOutputSize(int width, int height) {
+        if (!FrameGeometry.validOutputSize(width, height))
+            throw new IllegalArgumentException("宽高需为 16–4096 的偶数，总像素不超过 829 万");
+        if (p() != null) p().edit().putInt(KEY_OUTPUT_WIDTH, width)
+                .putInt(KEY_OUTPUT_HEIGHT, height).apply();
+    }
+    public static int outputLayout() {
+        int layout = getInt(KEY_OUTPUT_LAYOUT, outputWidth() >= outputHeight() ? 0 : 1);
+        return layout >= 0 && layout <= 2 ? layout : 0;
+    }
+    public static void setOutputLayout(int layout) {
+        if (layout < 0 || layout > 2) throw new IllegalArgumentException("Invalid output layout");
+        setInt(KEY_OUTPUT_LAYOUT, layout);
+    }
+    public static int manualRotationDegrees() { return manualRotationDegrees(cameraKey()); }
+    public static int manualRotationDegrees(String cameraKey) {
+        // v1 stored an absolute raw-frame rotation. It cannot be reused as an
+        // offset on top of sensor/device correction without rotating twice.
+        int value = getInt("calibration." + cameraKey, 0);
+        return value == 90 || value == 180 || value == 270 ? value : 0;
+    }
+    public static void setManualRotationDegrees(int degrees) {
+        setManualRotationDegrees(cameraKey(), degrees);
+    }
+    public static void setManualRotationDegrees(String cameraKey, int degrees) {
+        if (degrees != 0 && degrees != 90 && degrees != 180 && degrees != 270)
+            throw new IllegalArgumentException("校准角度需为 0°、90°、180° 或 270°");
+        setInt("calibration." + cameraKey, degrees);
+    }
+    public static boolean orientationLocked() { return getBool(KEY_DIRECTION_LOCK, false); }
+    public static int lockedDeviceOrientation() { return getInt(KEY_LOCK_DEVICE, 0); }
+    public static int lockedDisplayRotation() { return getInt(KEY_LOCK_DISPLAY, 0); }
+    public static void setOrientationLock(boolean locked, int deviceDegrees, int displayRotation) {
+        if (p() != null) p().edit().putBoolean(KEY_DIRECTION_LOCK, locked)
+                .putInt(KEY_LOCK_DEVICE, ((deviceDegrees + 45) / 90 * 90) % 360)
+                .putInt(KEY_LOCK_DISPLAY, displayRotation & 3).apply();
     }
 
     public static boolean needRtsp() {

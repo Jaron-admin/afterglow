@@ -7,7 +7,10 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.DialogInterface;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
@@ -16,6 +19,8 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 import android.view.View;
+import android.view.Surface;
+import android.view.Gravity;
 import android.view.inputmethod.EditorInfo;
 import android.view.KeyEvent;
 import android.widget.AdapterView;
@@ -23,7 +28,6 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -32,6 +36,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -69,7 +75,9 @@ public final class MainActivity extends Activity {
     private View rowMjpeg;
     private View rowSnapshot;
 
-    private ImageView ivPreview;
+    private CropPreviewView ivPreview;
+    private View flPreview;
+    private TextView tvGeometry;
     private View llPreviewEmpty;
     private TextView tvPreviewEmptyTitle;
     private TextView tvPreviewEmptyHint;
@@ -79,7 +87,20 @@ public final class MainActivity extends Activity {
     private Spinner spBitrate;
     private Spinner spMode;
     private Spinner spCamera;
-    private Spinner spRotation;
+    private Spinner spOutputLayout;
+    private CheckBox cbOrientationLock;
+    private View llResolution;
+    private View llCustomSize;
+    private EditText etOutputWidth;
+    private EditText etOutputHeight;
+    private final List<CameraCatalog.Entry> cameraEntries = new ArrayList<CameraCatalog.Entry>();
+    private final List<String> cameraKeys = new ArrayList<String>();
+    private final List<int[]> outputSizes = new ArrayList<int[]>();
+    private boolean loadingCameras;
+    private int pendingCalibrationDegrees = -1;
+    private CameraCatalog.Entry lastActiveCamera;
+    private long previewRevision = -1;
+    private FrameGeometry displayedGeometry;
 
     private CheckBox cbBoot;
     private CheckBox cbAuth;
@@ -150,10 +171,10 @@ public final class MainActivity extends Activity {
     private final CameraStreamService.PreviewListener previewListener =
             new CameraStreamService.PreviewListener() {
                 @Override
-                public void onPreviewJpeg(final byte[] jpeg, final long generation) {
+                public void onPreviewFrame(final PreviewFrame frame) {
                     final Handler h = decodeHandler;
                     final long epoch = previewEpoch;
-                    if (h == null || !acceptPreview(generation, epoch)
+                    if (h == null || !acceptPreview(frame, epoch)
                             || !decoding.compareAndSet(false, true)) {
                         return;
                     }
@@ -162,8 +183,8 @@ public final class MainActivity extends Activity {
                         public void run() {
                             Bitmap bmp = null;
                             try {
-                                if (acceptPreview(generation, epoch)) {
-                                    bmp = previewDecoder.decode(jpeg);
+                                if (acceptPreview(frame, epoch)) {
+                                    bmp = previewDecoder.decode(frame.jpeg);
                                 }
                             } catch (Throwable t) {
                                 Log.w("MainActivity", "preview decode failed", t);
@@ -179,8 +200,8 @@ public final class MainActivity extends Activity {
                                 @Override
                                 public void run() {
                                     try {
-                                        if (acceptPreview(generation, epoch) && !isFinishing()) {
-                                            showPreviewFrame(out, generation);
+                                        if (acceptPreview(frame, epoch) && !isFinishing()) {
+                                            showPreviewFrame(out, frame);
                                         }
                                     } finally {
                                         decoding.set(false);
@@ -200,6 +221,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Prefs.init(this);
+        applyRequestedOrientation();
         setContentView(R.layout.activity_main);
         bindViews();
         setupSpinners();
@@ -261,32 +283,30 @@ public final class MainActivity extends Activity {
             if (choice < 0 || choice > Prefs.CAM_FRONT) {
                 choice = Prefs.CAM_AUTO;
             }
-            streamChanged |= Prefs.cameraChoice() != choice;
-            Prefs.setInt(Prefs.KEY_CAMERA, choice);
+            String key = choice == Prefs.CAM_FRONT ? "facing:front"
+                    : choice == Prefs.CAM_BACK ? "facing:back" : "auto";
+            streamChanged |= !Prefs.cameraKey().equals(key);
+            Prefs.setCameraKey(key);
+            normalizeLegacyCameraKey();
             intent.removeExtra(EXTRA_CAMERA);
             if (spCamera != null) {
                 suppressListener = true;
-                spCamera.setSelection(choice, false);
+                refreshCameraOptions();
                 suppressListener = false;
             }
         }
         if (intent.hasExtra(EXTRA_ROTATION)) {
             int deg = intent.getIntExtra(EXTRA_ROTATION, 0);
-            int idx = 0;
-            for (int i = 0; i < Prefs.ROTATION_DEGREES.length; i++) {
-                if (Prefs.ROTATION_DEGREES[i] == deg) {
-                    idx = i;
-                    break;
-                }
+            deg = ((deg % 360) + 360) % 360;
+            if (deg % 90 != 0) deg = 0;
+            String calibrationKey = calibrationCameraKey();
+            if (calibrationKey == null) {
+                pendingCalibrationDegrees = deg;
+            } else {
+                Prefs.setManualRotationDegrees(calibrationKey, deg);
+                applyOrientationSettings();
             }
-            streamChanged |= Prefs.rotationIndex() != idx;
-            Prefs.setInt(Prefs.KEY_ROTATION, idx);
             intent.removeExtra(EXTRA_ROTATION);
-            if (spRotation != null) {
-                suppressListener = true;
-                spRotation.setSelection(idx, false);
-                suppressListener = false;
-            }
         }
         if (streamChanged) {
             scheduleStreamChanges();
@@ -309,6 +329,8 @@ public final class MainActivity extends Activity {
         previewEpoch++;
         previewActive = true;
         syncSelections();
+        applyRequestedOrientation();
+        loadCameras();
         refreshUi();
         handler.removeCallbacks(refresher);
         handler.post(refresher);
@@ -370,7 +392,9 @@ public final class MainActivity extends Activity {
         rowMjpeg = findViewById(R.id.rowMjpeg);
         rowSnapshot = findViewById(R.id.rowSnapshot);
 
-        ivPreview = (ImageView) findViewById(R.id.ivPreview);
+        ivPreview = (CropPreviewView) findViewById(R.id.ivPreview);
+        flPreview = findViewById(R.id.flPreview);
+        tvGeometry = (TextView) findViewById(R.id.tvGeometry);
         llPreviewEmpty = findViewById(R.id.llPreviewEmpty);
         tvPreviewEmptyTitle = (TextView) findViewById(R.id.tvPreviewEmptyTitle);
         tvPreviewEmptyHint = (TextView) findViewById(R.id.tvPreviewEmptyHint);
@@ -380,7 +404,12 @@ public final class MainActivity extends Activity {
         spBitrate = (Spinner) findViewById(R.id.spBitrate);
         spMode = (Spinner) findViewById(R.id.spMode);
         spCamera = (Spinner) findViewById(R.id.spCamera);
-        spRotation = (Spinner) findViewById(R.id.spRotation);
+        spOutputLayout = (Spinner) findViewById(R.id.spOutputLayout);
+        cbOrientationLock = (CheckBox) findViewById(R.id.cbOrientationLock);
+        llResolution = findViewById(R.id.llResolution);
+        llCustomSize = findViewById(R.id.llCustomSize);
+        etOutputWidth = (EditText) findViewById(R.id.etOutputWidth);
+        etOutputHeight = (EditText) findViewById(R.id.etOutputHeight);
 
         cbBoot = (CheckBox) findViewById(R.id.cbBoot);
         cbAuth = (CheckBox) findViewById(R.id.cbAuth);
@@ -396,9 +425,13 @@ public final class MainActivity extends Activity {
     private void setupSpinners() {
         suppressListener = true;
 
-        bindSpinner(spCamera, Prefs.CAMERA_LABELS, Prefs.cameraChoice());
-        bindSpinner(spRotation, Prefs.ROTATION_LABELS, Prefs.rotationIndex());
-        bindSpinner(spResolution, Prefs.RESOLUTION_LABELS, Prefs.getInt(Prefs.KEY_RES, 0));
+        refreshCameraOptions();
+        bindSpinner(spOutputLayout, getResources().getStringArray(R.array.output_layouts), Prefs.outputLayout());
+        refreshResolutionOptions();
+        cbOrientationLock.setChecked(Prefs.orientationLocked());
+        etOutputWidth.setText(String.valueOf(Prefs.outputWidth()));
+        etOutputHeight.setText(String.valueOf(Prefs.outputHeight()));
+        showOutputEditors();
         bindSpinner(spFps, Prefs.FPS_LABELS, Prefs.getInt(Prefs.KEY_FPS, 2));
         bindSpinner(spBitrate, Prefs.BITRATE_LABELS, Prefs.getInt(Prefs.KEY_BITRATE, 2));
         bindSpinner(spMode, Prefs.MODE_LABELS, Prefs.getInt(Prefs.KEY_MODE, Prefs.MODE_BOTH));
@@ -422,6 +455,311 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void loadCameras() {
+        if (loadingCameras) return;
+        loadingCameras = true;
+        new Thread(new Runnable() {
+            @Override public void run() {
+                List<CameraCatalog.Entry> found;
+                try {
+                    found = CameraCatalog.list(getApplicationContext());
+                } catch (Throwable error) {
+                    Log.w("MainActivity", "camera catalog unavailable", error);
+                    found = new ArrayList<CameraCatalog.Entry>();
+                }
+                final List<CameraCatalog.Entry> result = found;
+                handler.post(new Runnable() {
+                    @Override public void run() {
+                        loadingCameras = false;
+                        if (isFinishing() || (Build.VERSION.SDK_INT >= 17 && isDestroyed())) return;
+                        cameraEntries.clear();
+                        cameraEntries.addAll(result);
+                        mergeActiveCamera();
+                        normalizeLegacyCameraKey();
+                        String calibrationKey = calibrationCameraKey();
+                        if (pendingCalibrationDegrees >= 0 && calibrationKey != null) {
+                            Prefs.setManualRotationDegrees(calibrationKey, pendingCalibrationDegrees);
+                            pendingCalibrationDegrees = -1;
+                            applyOrientationSettings();
+                        }
+                        refreshCameraOptions();
+                        refreshResolutionOptions();
+                        updateGeometryLabel();
+                    }
+                });
+            }
+        }, "camera-catalog").start();
+    }
+
+    private void refreshCameraOptions() {
+        boolean wasSuppressed = suppressListener;
+        suppressListener = true;
+        cameraKeys.clear();
+        List<String> labels = new ArrayList<String>();
+        cameraKeys.add("auto");
+        labels.add(getString(R.string.camera_auto));
+        for (CameraCatalog.Entry camera : cameraEntries) {
+            if (!cameraKeys.contains(camera.key)) {
+                cameraKeys.add(camera.key);
+                labels.add(camera.label);
+            }
+        }
+        String selected = Prefs.cameraKey();
+        if (!cameraKeys.contains(selected)) {
+            cameraKeys.add(selected);
+            labels.add("facing:front".equals(selected) ? getString(R.string.camera_front_legacy)
+                    : "facing:back".equals(selected) ? getString(R.string.camera_back_legacy)
+                    : getString(R.string.camera_unavailable, selected));
+        }
+        bindSpinner(spCamera, labels.toArray(new String[0]), cameraKeys.indexOf(selected));
+        suppressListener = wasSuppressed;
+    }
+
+    private void mergeActiveCamera() {
+        CameraCatalog.Entry active = CameraStreamService.activeCamera;
+        if (active == null) return;
+        for (int i = 0; i < cameraEntries.size(); i++) {
+            if (cameraEntries.get(i).key.equals(active.key)) {
+                cameraEntries.set(i, active);
+                return;
+            }
+        }
+        cameraEntries.add(active);
+    }
+
+    private CameraCatalog.Entry selectedCamera() {
+        String key = Prefs.cameraKey();
+        int facing = "facing:front".equals(key) ? 1 : "facing:back".equals(key) ? 0 : -1;
+        CameraCatalog.Entry active = CameraStreamService.activeCamera;
+        if (CameraStreamService.running && active != null
+                && ("auto".equals(key) || active.key.equals(key) || active.facing == facing)) return active;
+        return CameraCatalog.find(cameraEntries, key);
+    }
+
+    private void normalizeLegacyCameraKey() {
+        String key = Prefs.cameraKey();
+        if (!"facing:front".equals(key) && !"facing:back".equals(key)) return;
+        CameraCatalog.Entry resolved = selectedCamera();
+        if (resolved != null) Prefs.setCameraKey(resolved.key);
+    }
+
+    private void refreshResolutionOptions() {
+        if (spResolution == null) return;
+        boolean wasSuppressed = suppressListener;
+        suppressListener = true;
+        outputSizes.clear();
+        addOutputSize(640, 480);
+        addOutputSize(1280, 720);
+        addOutputSize(1920, 1080);
+        CameraCatalog.Entry camera = selectedCamera();
+        if (camera != null && camera.sizes != null) {
+            for (int[] size : camera.sizes) {
+                if (size != null && size.length >= 2) addOutputSize(size[0], size[1]);
+            }
+        }
+        addOutputSize(Prefs.outputWidth(), Prefs.outputHeight());
+        Collections.sort(outputSizes, new Comparator<int[]>() {
+            @Override public int compare(int[] a, int[] b) {
+                long first = (long) a[0] * a[1];
+                long second = (long) b[0] * b[1];
+                return first < second ? -1 : first == second ? Integer.compare(a[0], b[0]) : 1;
+            }
+        });
+        List<String> labels = new ArrayList<String>();
+        int selected = 0;
+        for (int i = 0; i < outputSizes.size(); i++) {
+            int[] size = outputSizes.get(i);
+            labels.add(String.format(Locale.US, "%d × %d", size[0], size[1]));
+            if (size[0] == Prefs.outputWidth() && size[1] == Prefs.outputHeight()) selected = i;
+        }
+        bindSpinner(spResolution, labels.toArray(new String[0]), selected);
+        suppressListener = wasSuppressed;
+    }
+
+    private void addOutputSize(int width, int height) {
+        if (width < 16 || height < 16 || width > 4096 || height > 4096
+                || (width & 1) != 0 || (height & 1) != 0 || (long) width * height > 8294400L) return;
+        if (Prefs.outputLayout() != 2) {
+            int longer = Math.max(width, height);
+            int shorter = Math.min(width, height);
+            width = Prefs.outputLayout() == 0 ? longer : shorter;
+            height = Prefs.outputLayout() == 0 ? shorter : longer;
+        }
+        for (int[] size : outputSizes) if (size[0] == width && size[1] == height) return;
+        outputSizes.add(new int[] { width, height });
+    }
+
+    private void showOutputEditors() {
+        boolean custom = Prefs.outputLayout() == 2;
+        llResolution.setVisibility(custom ? View.GONE : View.VISIBLE);
+        llCustomSize.setVisibility(custom ? View.VISIBLE : View.GONE);
+    }
+
+    private boolean saveCustomOutput() {
+        int width = parseDimension(etOutputWidth);
+        int height = parseDimension(etOutputHeight);
+        if (width < 0 || height < 0) return false;
+        if ((long) width * height > 8294400L) {
+            etOutputHeight.setError(getString(R.string.output_pixel_limit));
+            return false;
+        }
+        if (width != Prefs.outputWidth() || height != Prefs.outputHeight()) {
+            Prefs.setOutputSize(width, height);
+            updateGeometryLabel();
+            scheduleStreamChanges();
+        }
+        return true;
+    }
+
+    private int parseDimension(EditText field) {
+        int value;
+        try { value = Integer.parseInt(field.getText().toString().trim()); }
+        catch (NumberFormatException error) { value = -1; }
+        if (value < 16 || value > 4096 || (value & 1) != 0) {
+            field.setError(getString(R.string.output_dimension_invalid));
+            return -1;
+        }
+        field.setError(null);
+        return value;
+    }
+
+    private String calibrationCameraKey() {
+        CameraCatalog.Entry selected = selectedCamera();
+        return selected != null ? selected.key : null;
+    }
+
+    private void showCalibrationDialog() {
+        final String key = calibrationCameraKey();
+        if (key == null) {
+            Toast.makeText(this, R.string.camera_catalog_waiting, Toast.LENGTH_SHORT).show();
+            loadCameras();
+            return;
+        }
+        final int previous = Prefs.manualRotationDegrees(key);
+        final int[] selected = new int[] { previous / 90 };
+        CameraCatalog.Entry camera = selectedCamera();
+        String title = getString(R.string.calibrate_camera)
+                + (camera == null ? "" : " · " + camera.label);
+        new AlertDialog.Builder(this).setTitle(title)
+                .setSingleChoiceItems(R.array.camera_calibration_offsets, selected[0],
+                        new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) { selected[0] = which; }
+                        })
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        int degrees = selected[0] * 90;
+                        if (degrees != previous) {
+                            Prefs.setManualRotationDegrees(key, degrees);
+                            applyOrientationSettings();
+                        }
+                    }
+                })
+                .setNeutralButton(R.string.calibration_reset, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        Prefs.setManualRotationDegrees(key, 0);
+                        applyOrientationSettings();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void applyOrientationSettings() {
+        if (!CameraStreamService.running) return;
+        try {
+            Intent intent = new Intent(this, CameraStreamService.class);
+            intent.setAction(CameraStreamService.ACTION_ORIENTATION_SETTINGS);
+            startService(intent);
+        } catch (Throwable error) {
+            Toast.makeText(this, getString(R.string.orientation_apply_failed, error.getMessage()), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void applyRequestedOrientation() {
+        if (!Prefs.orientationLocked()) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+            return;
+        }
+        int current = getWindowManager().getDefaultDisplay().getRotation();
+        boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+        boolean naturalPortrait = ((current == Surface.ROTATION_0 || current == Surface.ROTATION_180) && portrait)
+                || ((current == Surface.ROTATION_90 || current == Surface.ROTATION_270) && !portrait);
+        int locked = Prefs.lockedDisplayRotation();
+        int[] requests = naturalPortrait ? new int[] {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT, ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+        } : new int[] {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        };
+        setRequestedOrientation(requests[Math.max(0, Math.min(3, locked))]);
+    }
+
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        flPreview.post(new Runnable() {
+            @Override public void run() { resizePreview(displayedGeometry); }
+        });
+    }
+
+    private void resizePreview(FrameGeometry geometry) {
+        if (geometry == null || geometry.fullWidth <= 0 || geometry.fullHeight <= 0) return;
+        View parent = (View) flPreview.getParent();
+        int availableWidth = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+        if (availableWidth <= 0) availableWidth = getResources().getDisplayMetrics().widthPixels - dp(24);
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int limit = Math.max(dp(120), (int) (screenHeight * 0.42f));
+        int width = Math.max(1, Math.min(availableWidth, (int) (limit * (float) geometry.fullWidth / geometry.fullHeight)));
+        int height = Math.max(1, Math.round(width * (float) geometry.fullHeight / geometry.fullWidth));
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) flPreview.getLayoutParams();
+        if (params.width != width || params.height != height || params.gravity != Gravity.CENTER_HORIZONTAL) {
+            params.width = width;
+            params.height = height;
+            params.gravity = Gravity.CENTER_HORIZONTAL;
+            flPreview.setLayoutParams(params);
+        }
+    }
+
+    private int dp(int pixels) { return Math.round(pixels * getResources().getDisplayMetrics().density); }
+
+    private void updateGeometryLabel() {
+        FrameGeometry geometry = CameraStreamService.frameGeometry;
+        String text;
+        if (CameraStreamService.running && geometry != null) {
+            int divisor = gcd(geometry.fullWidth, geometry.fullHeight);
+            text = getString(R.string.geometry_live, geometry.fullWidth, geometry.fullHeight,
+                    geometry.fullWidth / divisor, geometry.fullHeight / divisor,
+                    geometry.outputWidth, geometry.outputHeight);
+        } else {
+            CameraCatalog.Entry camera = selectedCamera();
+            int[] sourceSize = largestSourceSize(camera);
+            if (sourceSize != null) {
+                int divisor = gcd(sourceSize[0], sourceSize[1]);
+                text = getString(R.string.geometry_available, sourceSize[0], sourceSize[1],
+                        sourceSize[0] / divisor, sourceSize[1] / divisor,
+                        Prefs.outputWidth(), Prefs.outputHeight());
+            } else {
+                text = getString(R.string.geometry_unknown, Prefs.outputWidth(), Prefs.outputHeight());
+            }
+        }
+        if (!text.contentEquals(tvGeometry.getText())) tvGeometry.setText(text);
+    }
+
+    private static int gcd(int first, int second) {
+        while (second != 0) { int remainder = first % second; first = second; second = remainder; }
+        return Math.max(1, first);
+    }
+
+    private static int[] largestSourceSize(CameraCatalog.Entry camera) {
+        if (camera == null || camera.sizes == null) return null;
+        int[] largest = null;
+        for (int[] size : camera.sizes) {
+            if (size == null || size.length < 2 || size[0] <= 0 || size[1] <= 0
+                    || size[0] > 4096 || size[1] > 4096 || (long) size[0] * size[1] > 8294400L) continue;
+            if (largest == null || (long) size[0] * size[1] > (long) largest[0] * largest[1]) largest = size;
+        }
+        return largest;
+    }
+
     private void setupListeners() {
         btnToggle.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -443,19 +781,76 @@ public final class MainActivity extends Activity {
         spCamera.setOnItemSelectedListener(new SimpleSelect() {
             @Override
             public void onSelected(int position) {
-                updateStreamSetting(Prefs.KEY_CAMERA, Prefs.CAM_AUTO, position);
+                if (position < 0 || position >= cameraKeys.size()) return;
+                String key = cameraKeys.get(position);
+                if (key.equals(Prefs.cameraKey())) return;
+                Prefs.setCameraKey(key);
+                refreshResolutionOptions();
+                updateGeometryLabel();
+                scheduleStreamChanges();
             }
         });
-        spRotation.setOnItemSelectedListener(new SimpleSelect() {
+        spOutputLayout.setOnItemSelectedListener(new SimpleSelect() {
             @Override
             public void onSelected(int position) {
-                updateStreamSetting(Prefs.KEY_ROTATION, 0, position);
+                if (position == Prefs.outputLayout()) return;
+                int width = Prefs.outputWidth();
+                int height = Prefs.outputHeight();
+                Prefs.setOutputLayout(position);
+                if (position != 2) {
+                    int longSide = Math.max(width, height);
+                    int shortSide = Math.min(width, height);
+                    width = position == 0 ? longSide : shortSide;
+                    height = position == 0 ? shortSide : longSide;
+                }
+                boolean changed = width != Prefs.outputWidth() || height != Prefs.outputHeight();
+                Prefs.setOutputSize(width, height);
+                etOutputWidth.setText(String.valueOf(width));
+                etOutputHeight.setText(String.valueOf(height));
+                etOutputWidth.setError(null);
+                etOutputHeight.setError(null);
+                refreshResolutionOptions();
+                showOutputEditors();
+                updateGeometryLabel();
+                if (changed) scheduleStreamChanges();
             }
         });
         spResolution.setOnItemSelectedListener(new SimpleSelect() {
             @Override
             public void onSelected(int position) {
-                updateStreamSetting(Prefs.KEY_RES, 0, position);
+                if (Prefs.outputLayout() == 2 || position < 0 || position >= outputSizes.size()) return;
+                int[] size = outputSizes.get(position);
+                if (size[0] == Prefs.outputWidth() && size[1] == Prefs.outputHeight()) return;
+                Prefs.setOutputSize(size[0], size[1]);
+                etOutputWidth.setText(String.valueOf(size[0]));
+                etOutputHeight.setText(String.valueOf(size[1]));
+                etOutputWidth.setError(null);
+                etOutputHeight.setError(null);
+                updateGeometryLabel();
+                scheduleStreamChanges();
+            }
+        });
+        cbOrientationLock.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(android.widget.CompoundButton button, boolean locked) {
+                if (suppressListener) return;
+                int displayRotation = getWindowManager().getDefaultDisplay().getRotation();
+                int deviceDegrees = CameraStreamService.running ? CameraStreamService.deviceOrientation
+                        : (360 - displayRotation * 90) % 360;
+                Prefs.setOrientationLock(locked, deviceDegrees, displayRotation);
+                applyRequestedOrientation();
+                applyOrientationSettings();
+            }
+        });
+        findViewById(R.id.btnCalibrate).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { showCalibrationDialog(); }
+        });
+        findViewById(R.id.btnApplySize).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { saveCustomOutput(); }
+        });
+        etOutputHeight.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override public boolean onEditorAction(TextView view, int action, KeyEvent event) {
+                if (action == EditorInfo.IME_ACTION_DONE) { saveCustomOutput(); return true; }
+                return false;
             }
         });
         spFps.setOnItemSelectedListener(new SimpleSelect() {
@@ -671,9 +1066,10 @@ public final class MainActivity extends Activity {
 
     private void syncSelections() {
         suppressListener = true;
-        spCamera.setSelection(Prefs.cameraChoice(), false);
-        spRotation.setSelection(Prefs.rotationIndex(), false);
-        spResolution.setSelection(Prefs.resIndex(), false);
+        refreshCameraOptions();
+        spOutputLayout.setSelection(Prefs.outputLayout(), false);
+        refreshResolutionOptions();
+        cbOrientationLock.setChecked(Prefs.orientationLocked());
         spFps.setSelection(Prefs.getInt(Prefs.KEY_FPS, 2), false);
         spBitrate.setSelection(Prefs.getInt(Prefs.KEY_BITRATE, 2), false);
         spMode.setSelection(Prefs.mode(), false);
@@ -681,7 +1077,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean saveSettings() {
-        return saveAuth();
+        return (Prefs.outputLayout() != 2 || saveCustomOutput()) && saveAuth();
     }
 
     private boolean saveAuth() {
@@ -743,6 +1139,7 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_PERM) {
             if (hasCameraPermission()) {
+                loadCameras();
                 if (saveSettings()) {
                     startServiceNow();
                 }
@@ -833,19 +1230,33 @@ public final class MainActivity extends Activity {
         }
 
         refreshPreview(running);
+        CameraCatalog.Entry active = CameraStreamService.activeCamera;
+        if (active != lastActiveCamera) {
+            lastActiveCamera = active;
+            mergeActiveCamera();
+            normalizeLegacyCameraKey();
+            refreshCameraOptions();
+            refreshResolutionOptions();
+        }
+        updateGeometryLabel();
         refreshAddresses();
     }
 
-    private boolean acceptPreview(long generation, long epoch) {
+    private boolean acceptPreview(PreviewFrame frame, long epoch) {
+        FrameGeometry latest = CameraStreamService.frameGeometry;
         return previewActive && epoch == previewEpoch && CameraStreamService.running
                 && !CameraStreamService.reconfiguring
-                && generation != rejectedPreviewGeneration
-                && generation == CameraStreamService.streamGeneration;
+                && frame.generation != rejectedPreviewGeneration
+                && frame.generation == CameraStreamService.streamGeneration
+                && frame.geometry != null && latest != null
+                && frame.geometry.revision == latest.revision;
     }
 
     private void resetPreview() {
         hasPreviewFrame = false;
-        ivPreview.setImageDrawable(null);
+        ivPreview.clearFrame();
+        displayedGeometry = null;
+        previewRevision = -1;
         ivPreview.setVisibility(View.GONE);
         llPreviewEmpty.setVisibility(View.VISIBLE);
     }
@@ -868,13 +1279,19 @@ public final class MainActivity extends Activity {
         tvPreviewEmptyHint.setVisibility(View.GONE);
     }
 
-    private void showPreviewFrame(Bitmap bmp, long generation) {
-        if (previewGeneration != generation) {
+    private void showPreviewFrame(Bitmap bmp, PreviewFrame frame) {
+        if (previewGeneration != frame.generation) {
             resetPreview();
-            previewGeneration = generation;
+            previewGeneration = frame.generation;
         }
         hasPreviewFrame = true;
-        ivPreview.setImageBitmap(bmp);
+        displayedGeometry = frame.geometry;
+        if (previewRevision != frame.geometry.revision) {
+            previewRevision = frame.geometry.revision;
+            resizePreview(frame.geometry);
+            updateGeometryLabel();
+        }
+        ivPreview.setFrame(bmp, frame.geometry);
         ivPreview.setVisibility(View.VISIBLE);
         llPreviewEmpty.setVisibility(View.GONE);
     }
