@@ -1,0 +1,17 @@
+.gradle/
+**/build/
+local.properties
+dist/
+tmp/
+.work/
+*.keystore
+*.jks
+*.idsig
+*.log
+__pycache__/
+*.py[cod]
+.idea/
+*.iml
+.env
+.env.*
+tools/frame.jpg

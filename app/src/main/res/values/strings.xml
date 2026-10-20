@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">余光</string>
+    <string name="app_subtitle">Afterglow</string>
+
+    <string name="status_stopped">未开启</string>
+    <string name="status_running">推流中</string>
+    <string name="btn_start">开启摄像头</string>
+    <string name="btn_stop">停止推流</string>
+
+    <string name="preview_title">实时预览</string>
+    <string name="preview_idle">余光，等待开启</string>
+    <string name="preview_idle_hint"></string>
+    <string name="preview_waiting">正在连接画面…</string>
+    <string name="preview_waiting_hint"></string>
+    <string name="detail_idle">准备就绪</string>
+
+    <string name="section_address">访问地址</string>
+    <string name="section_address_hint">点按复制</string>
+    <string name="section_devices">附近设备</string>
+    <string name="section_devices_hint"></string>
+    <string name="devices_scanning">正在查找 %1$s…</string>
+    <string name="devices_found">发现 %1$d 台设备</string>
+    <string name="devices_none">暂无设备</string>
+    <string name="devices_none_hint"></string>
+    <string name="btn_rescan">刷新</string>
+    <string name="device_view">查看</string>
+    <string name="viewer_close">关闭</string>
+    <string name="viewer_connecting">正在连接…</string>
+    <string name="viewer_reconnecting">正在重连…（%1$d/%2$d）</string>
+    <string name="viewer_failed">连接失败\n%1$s\n请确认对方仍在推流，且与本机在同一网段</string>
+    <string name="section_settings">画质与输出</string>
+    <string name="section_settings_hint">自动应用</string>
+    <string name="section_advanced">高级</string>
+
+    <string name="addr_rtsp">RTSP</string>
+    <string name="addr_mjpeg">MJPEG</string>
+    <string name="addr_snapshot">快照</string>
+
+    <string name="label_camera">摄像头</string>
+    <string name="label_rotation">旋转</string>
+    <string name="label_resolution">分辨率</string>
+    <string name="label_fps">帧率</string>
+    <string name="label_bitrate">码率</string>
+    <string name="label_mode">输出模式</string>
+    <string name="label_boot">开机自动启动</string>
+    <string name="label_auth">访问验证（MJPEG）</string>
+
+    <string name="hint_user">用户名</string>
+    <string name="hint_pass">密码</string>
+
+    <string name="tip">手机需与 Home Assistant 处于同一局域网。建议屏幕亮度调到最低并保持充电，长期满电静置容易让老电池鼓包；部分机型需在「设置-电池」中允许本应用后台运行，否则长时间推流会被系统杀掉。</string>
+
+    <string name="copied">已复制到剪贴板</string>
+    <string name="status_switching">正在切换…</string>
+    <string name="address_disabled">未启用</string>
+    <string name="help_title">帮助</string>
+    <string name="help_body">将手机与查看设备连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC、Home Assistant 等使用，MJPEG 可用浏览器查看。\n\n镜头、旋转和画质修改后会自动应用，切换时会短暂断开画面。自动模式优先使用后置，打开失败会尝试另一镜头。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。MJPEG 访问验证在输入完成或离开输入框后生效。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="auth_username_required">用户名不能为空</string>
+</resources>

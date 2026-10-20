@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF000000">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#FF16181D"
+        android:paddingLeft="4dp"
+        android:paddingRight="12dp">
+
+        <TextView
+            android:id="@+id/btnClose"
+            android:layout_width="wrap_content"
+            android:layout_height="52dp"
+            android:gravity="center"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:text="@string/viewer_close"
+            android:textColor="@color/primary"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif-medium"
+            android:background="?android:attr/selectableItemBackground" />
+
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:singleLine="true"
+            android:ellipsize="middle"
+            android:textColor="#FFF1F3F4"
+            android:textSize="15sp" />
+
+        <!-- 占位，让标题视觉居中 -->
+        <View
+            android:layout_width="48dp"
+            android:layout_height="1dp" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:id="@+id/ivFrame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/preview_title" />
+
+        <SurfaceView
+            android:id="@+id/svVideo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:padding="24dp"
+            android:textColor="#B3FFFFFF"
+            android:textSize="14sp"
+            android:lineSpacingExtra="4dp" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FF16181D"
+        android:padding="10dp"
+        android:gravity="center"
+        android:singleLine="true"
+        android:ellipsize="middle"
+        android:textColor="#FF8A8F98"
+        android:textSize="11sp" />
+</LinearLayout>
