@@ -192,7 +192,25 @@ public final class H264Encoder {
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
         format.setInteger(MediaFormat.KEY_FRAME_RATE, fps);
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
-        if (Build.VERSION.SDK_INT >= 29) format.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
+
+        // B-frames make MediaCodec emit presentation timestamps out of decode order.
+        // RTP only carries a presentation timestamp, so Home Assistant/ffmpeg cannot
+        // derive a DTS and logs "No dts in 7 consecutive packets" before giving up.
+        // Android only has KEY_MAX_B_FRAMES from API 29; older codecs still accept the
+        // key and use it to turn B-frames off, so set it on every API level.
+        try {
+            format.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
+        } catch (Throwable ignored) {
+            Log.w(TAG, "encoder rejected max-b-frames=0");
+        }
+        if (Build.VERSION.SDK_INT >= 23) {
+            // Ask the codec to run in real time instead of batching a few frames.
+            try {
+                format.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                format.setInteger(MediaFormat.KEY_OPERATING_RATE, fps);
+            } catch (Throwable ignored) {
+            }
+        }
 
         // Some old ROMs reject a forced profile. Keep their supported default, but check
         // actual output slice types/timestamps before handing samples to an old MP4 muxer.

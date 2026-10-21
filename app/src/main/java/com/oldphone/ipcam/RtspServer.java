@@ -144,7 +144,10 @@ public final class RtspServer {
         private final Track video = new Track(0, 90000, VIDEO_PT);
         private final Track sound = audio == null ? null : new Track(1, audio.rate, AUDIO_PT);
         private final Track[] tracks;
-        private final ArrayBlockingQueue<Frame> queue = new ArrayBlockingQueue<Frame>(120);
+        // A slow TCP client must not turn into seconds of video delay. Keep at most a
+        // few frames queued (<= ~1.5s even at 5 fps); on overflow the oldest frame is
+        // dropped and the stream resynchronises at the next IDR (at most 1s away).
+        private final ArrayBlockingQueue<Frame> queue = new ArrayBlockingQueue<Frame>(8);
         private final Object transportLock = new Object();
         private volatile boolean playing;
         private volatile boolean closed;

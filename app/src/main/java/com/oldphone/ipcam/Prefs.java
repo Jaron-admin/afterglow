@@ -41,6 +41,8 @@ public final class Prefs {
     private static final String KEY_CAMERA_KEY = "camera_key_v2";
     private static final String KEY_OUTPUT_WIDTH = "output_width";
     private static final String KEY_OUTPUT_HEIGHT = "output_height";
+    private static final String KEY_RECORD_WIDTH = "record_width";
+    private static final String KEY_RECORD_HEIGHT = "record_height";
     private static final String KEY_OUTPUT_LAYOUT = "output_layout";
     private static final String KEY_DIRECTION_LOCK = "direction_lock";
     private static final String KEY_LOCK_DEVICE = "locked_device_angle";
@@ -239,11 +241,28 @@ public final class Prefs {
         if (p() != null) p().edit().putInt(KEY_OUTPUT_WIDTH, width)
                 .putInt(KEY_OUTPUT_HEIGHT, height).apply();
     }
+
+    /** 0x0 means recording follows the stream size (legacy behaviour). */
+    public static int recordWidth() { return getInt(KEY_RECORD_WIDTH, 0); }
+    public static int recordHeight() { return getInt(KEY_RECORD_HEIGHT, 0); }
+    public static boolean hasRecordSize() {
+        return recordWidth() >= 16 && recordHeight() >= 16;
+    }
+    public static void setRecordSize(int width, int height) {
+        if (width == 0 && height == 0) {
+            if (p() != null) p().edit().remove(KEY_RECORD_WIDTH)
+                    .remove(KEY_RECORD_HEIGHT).apply();
+            return;
+        }
+        if (!FrameGeometry.validOutputSize(width, height))
+            throw new IllegalArgumentException("宽高需为 16–4096 的偶数，总像素不超过 829 万");
+        if (p() != null) p().edit().putInt(KEY_RECORD_WIDTH, width)
+                .putInt(KEY_RECORD_HEIGHT, height).apply();
+    }
     public static int outputLayout() {
         int layout = getInt(KEY_OUTPUT_LAYOUT, outputWidth() >= outputHeight() ? 0 : 1);
         return layout >= 0 && layout <= 2 ? layout : 0;
-    }
-    public static void setOutputLayout(int layout) {
+    }    public static void setOutputLayout(int layout) {
         if (layout < 0 || layout > 2) throw new IllegalArgumentException("Invalid output layout");
         setInt(KEY_OUTPUT_LAYOUT, layout);
     }

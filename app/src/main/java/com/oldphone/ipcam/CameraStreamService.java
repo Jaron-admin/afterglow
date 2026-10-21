@@ -100,10 +100,14 @@ public final class CameraStreamService extends Service {
 
     private int outputWidth;
     private int outputHeight;
+    private int recordWidth;
+    private int recordHeight;
     private int fps;
     private int bitrate;
     private byte[] outputBuffer;
+    private byte[] recordBuffer;
     private FrameGeometry geometry;
+    private FrameGeometry recordGeometry;
     private long appliedOrientationSettings = -1;
     private int manualRotation;
     private final FramePacer framePacer = new FramePacer(15);
@@ -272,11 +276,20 @@ public final class CameraStreamService extends Service {
             throw new IOException("仅本地模式需要先开启录像");
         outputWidth = Prefs.outputWidth();
         outputHeight = Prefs.outputHeight();
+        // Recording can use a larger size than the MJPEG/stream output. Capture at
+        // the larger of the two and render two crops from the same NV21 frame.
+        boolean needsRecordSize = Prefs.recordingMode() != 0 || Prefs.needRtsp();
+        recordWidth = needsRecordSize && Prefs.hasRecordSize()
+                ? Prefs.recordWidth() : outputWidth;
+        recordHeight = needsRecordSize && Prefs.hasRecordSize()
+                ? Prefs.recordHeight() : outputHeight;
+        int captureWidth = Math.max(outputWidth, recordWidth);
+        int captureHeight = Math.max(outputHeight, recordHeight);
         fps = Prefs.fps();
         bitrate = Prefs.bitrate();
         framePacer.setFps(fps);
         acquireWakeLock();
-        capture = CameraCapture.open(this, Prefs.cameraKey(), outputWidth, outputHeight,
+        capture = CameraCapture.open(this, Prefs.cameraKey(), captureWidth, captureHeight,
                 fps, cameraHandler, new CameraCapture.Listener() {
                     @Override public void onFrame(byte[] nv21, int width, int height) {
                         processFrame(nv21, width, height, generation);
@@ -293,12 +306,19 @@ public final class CameraStreamService extends Service {
         videoWidth = outputWidth;
         videoHeight = outputHeight;
         geometry = null;
+        recordGeometry = null;
         geometryForFrame(capture.width, capture.height, generation);
         long outputBytes = (long) outputWidth * outputHeight * 3 / 2;
         if (outputBytes <= 0 || outputBytes > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("输出尺寸过大");
         }
         outputBuffer = new byte[(int) outputBytes];
+        long recordBytes = (long) recordWidth * recordHeight * 3 / 2;
+        if (recordBytes <= 0 || recordBytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("录像尺寸过大");
+        }
+        recordBuffer = (recordWidth == outputWidth && recordHeight == outputHeight)
+                ? null : new byte[(int) recordBytes];
         startServers(generation);
         if (!isSessionCurrent(generation)) return;
         framePacer.reset();
@@ -336,7 +356,7 @@ public final class CameraStreamService extends Service {
         final RecordingManager sessionRecorder = recorder;
         if (Prefs.needRtsp()) {
             rtspServer = new RtspServer(RTSP_PORT);
-            rtspServer.setVideoInfo(outputWidth, outputHeight, bitrate);
+            rtspServer.setVideoInfo(recordWidth, recordHeight, bitrate);
             if (microphone) rtspServer.setAudioConfig(AudioCapture.SAMPLE_RATE,
                     AudioCapture.CHANNELS, AudioCapture.audioSpecificConfig());
         }
@@ -344,7 +364,7 @@ public final class CameraStreamService extends Service {
         if (sessionRtsp != null || sessionRecorder != null) {
             try {
                 encoder = new H264Encoder();
-                encoder.start(outputWidth, outputHeight, fps, bitrate, new H264Encoder.Listener() {
+                encoder.start(recordWidth, recordHeight, fps, bitrate, new H264Encoder.Listener() {
                     @Override public void onEncodedFrame(byte[] data, long ptsUs, boolean keyFrame) {
                         if (sessionRtsp != null && isSessionCurrent(generation)) {
                             sessionRtsp.pushFrame(data, ptsUs, keyFrame);
@@ -362,8 +382,8 @@ public final class CameraStreamService extends Service {
                 });
                 if (sessionRtsp != null) sessionRtsp.start();
             } catch (Throwable failure) {
-                throw new IOException("视频编码/服务启动失败（" + outputWidth + "×"
-                        + outputHeight + "，" + fps + " fps）：" + errorMessage(failure), failure);
+                throw new IOException("视频编码/服务启动失败（" + recordWidth + "×"
+                        + recordHeight + "，" + fps + " fps）：" + errorMessage(failure), failure);
             }
         }
         if (Prefs.mode() != Prefs.MODE_LOCAL) {
@@ -442,6 +462,25 @@ public final class CameraStreamService extends Service {
         return geometry;
     }
 
+    /**
+     * Same crop/rotation as the stream, rendered at the larger recording size.
+     * Returns the stream geometry when recording follows the stream size.
+     */
+    private FrameGeometry recordGeometryForFrame(int rawWidth, int rawHeight) {
+        if (recordBuffer == null) return geometry;
+        OrientationSettings settings = orientationSettings;
+        int pose = settings.locked ? settings.lockedPose : deviceOrientation;
+        int rotation = FrameGeometry.rotation(captureEntry.sensorOrientation,
+                captureEntry.facing == 1, pose, manualRotation);
+        if (recordGeometry == null || recordGeometry.rawWidth != rawWidth
+                || recordGeometry.rawHeight != rawHeight || recordGeometry.rotation != rotation
+                || appliedOrientationSettings != settings.revision) {
+            recordGeometry = FrameGeometry.create(rawWidth, rawHeight, rotation,
+                    recordWidth, recordHeight, GEOMETRY_REVISIONS.incrementAndGet());
+        }
+        return recordGeometry;
+    }
+
     private void processFrame(byte[] nv21, int rawWidth, int rawHeight, long generation) {
         if (!streaming || capture == null || !isSessionCurrent(generation)) return;
         long now = System.nanoTime();
@@ -449,7 +488,15 @@ public final class CameraStreamService extends Service {
         try {
             final FrameGeometry framePlan = geometryForFrame(rawWidth, rawHeight, generation);
             Nv21Transform.render(nv21, framePlan, outputBuffer);
-            if (encoder != null) encoder.encode(outputBuffer, now / 1000L);
+            if (encoder != null) {
+                byte[] encodeBuffer = outputBuffer;
+                if (recordBuffer != null) {
+                    FrameGeometry recordPlan = recordGeometryForFrame(rawWidth, rawHeight);
+                    Nv21Transform.render(nv21, recordPlan, recordBuffer);
+                    encodeBuffer = recordBuffer;
+                }
+                encoder.encode(encodeBuffer, now / 1000L);
+            }
             if (motionDetector != null && motionDetector.update(outputBuffer, outputWidth,
                     outputHeight, now / 1000L, framePlan.revision, detectionSensitivity))
                 detected(recorder, "画面变动", now / 1000L, generation);
@@ -542,7 +589,9 @@ public final class CameraStreamService extends Service {
         releaseWakeLock();
         captureEntry = null;
         outputBuffer = null;
+        recordBuffer = null;
         geometry = null;
+        recordGeometry = null;
         appliedOrientationSettings = -1;
         if (stateOwner == this) {
             measuredFps = 0;

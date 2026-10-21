@@ -33,7 +33,7 @@ $version = [regex]::Match($gradleText, 'versionName\s*=\s*"([^"]+)"').Groups[1].
 $versionCode = [regex]::Match($gradleText, 'versionCode\s*=\s*(\d+)').Groups[1].Value
 $namespace = [regex]::Match($gradleText, 'namespace\s*=\s*"([^"]+)"').Groups[1].Value
 if (!$version -or !$versionCode -or !$namespace) { throw 'Missing version or namespace in app/build.gradle.kts' }
-[xml]$manifest = Get-Content -LiteralPath 'app\src\main\AndroidManifest.xml' -Raw
+[xml]$manifest = [xml][IO.File]::ReadAllText((Resolve-Path -LiteralPath 'app\src\main\AndroidManifest.xml'), [Text.Encoding]::UTF8)
 $manifest.DocumentElement.SetAttribute('package', $namespace)
 $manifest.Save((Join-Path $out 'AndroidManifest.xml'))
 

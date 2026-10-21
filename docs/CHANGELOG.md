@@ -2,6 +2,14 @@
 
 日常使用见[项目首页](../README.md)，构建和验收见[开发说明](development.md)。
 
+## 1.4.3 的改动
+
+- 修复 Home Assistant 播放 RTSP 时报 No dts in 7 consecutive packets / Error demuxing stream：所有 Android 版本关闭 H.264 B 帧，旧设备（API 28）不再输出乱序时间戳。
+- RTSP 发送队列从 120 帧降到 8 帧，慢客户端不再累积数秒延迟；编码器增加实时优先级。
+- 新增录像分辨率设置：推流（MJPEG/预览）保持主页低分辨率，H.264 录像可单独选 640×360 / 960×540 / 1280×720；单个编码器，采集按两者较大尺寸运行。
+- Windows 构建脚本按 UTF-8 读取 AndroidManifest，修复中文资源导致的构建失败。
+- 注意：本版 APK 使用新的调试签名，从 1.4.2 覆盖安装会提示签名不一致；需要卸载旧版后安装（会清除应用内设置与录像）。
+
 ## 1.4.2 的改动
 
 - App 与 README 的 HA 教程统一为四步 Generic Camera 接入，默认只配置实时画面。

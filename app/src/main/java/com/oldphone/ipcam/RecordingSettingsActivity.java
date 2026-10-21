@@ -25,11 +25,15 @@ import java.util.List;
 public final class RecordingSettingsActivity extends Activity {
     private LinearLayout content;
     private Spinner mode, target, policy, sensitivity;
+    private Spinner recordSize;
     private EditText segment, size, quota, reserve, retention, pre, post;
     private CheckBox microphone, recordAudio, motion, sound;
     private final List<String> targetIds = new ArrayList<String>();
     private int nextId = 4100;
     private static final int AUDIO_PERMISSION = 41;
+    private static final int[][] RECORD_SIZES = {
+            {0, 0}, {640, 360}, {960, 540}, {1280, 720}
+    };
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -87,8 +91,25 @@ public final class RecordingSettingsActivity extends Activity {
         syncAudioControls();
         note("麦克风默认关闭。MJPEG 网页始终无声；声响检测判断声音变化，不识别说话或犬吠。");
         section("录像画质");
+        String[] recordLabels = new String[RECORD_SIZES.length];
+        recordLabels[0] = "跟随推流（" + Prefs.outputWidth() + "×" + Prefs.outputHeight() + "）";
+        for (int i = 1; i < RECORD_SIZES.length; i++) {
+            recordLabels[i] = RECORD_SIZES[i][0] + "×" + RECORD_SIZES[i][1];
+        }
+        int recordSelected = 0;
+        for (int i = 1; i < RECORD_SIZES.length; i++) {
+            if (Prefs.recordWidth() == RECORD_SIZES[i][0]
+                    && Prefs.recordHeight() == RECORD_SIZES[i][1]) {
+                recordSelected = i;
+            }
+        }
+        recordSize = choice("录像分辨率", recordLabels, recordSelected);
         note(Prefs.outputWidth() + " × " + Prefs.outputHeight() + " · " + Prefs.fps()
-                + " fps · " + (Prefs.bitrate() / 1000) + " kbps\n分辨率、比例、帧率和码率与主页推流设置共用。");
+                + " fps · " + (Prefs.bitrate() / 1000) + " kbps\n"
+                + "推流（MJPEG/预览）使用主页的输出分辨率；录像使用上面的分辨率，"
+                + "RTSP 跟随录像分辨率。只使用一个 H264 编码器。");
+        note("录像分辨率高于推流时，采集按较高分辨率运行，旧手机的 CPU 和发热会上升；"
+                + "建议最高 1280×720。");
         note("录像修改保存后，运行中的采集会短暂重启，并结束当前片段。");
         button("保存并应用", new View.OnClickListener() {
             @Override public void onClick(View view) { save(); }
@@ -152,6 +173,10 @@ public final class RecordingSettingsActivity extends Activity {
             Prefs.setBool(Prefs.KEY_MOTION, motion.isChecked());
             Prefs.setBool(Prefs.KEY_SOUND, sound.isChecked());
             Prefs.setInt(Prefs.KEY_SENSITIVITY, sensitivity.getSelectedItemPosition());
+            int recordIndex = recordSize.getSelectedItemPosition();
+            if (recordIndex >= 0 && recordIndex < RECORD_SIZES.length) {
+                Prefs.setRecordSize(RECORD_SIZES[recordIndex][0], RECORD_SIZES[recordIndex][1]);
+            }
             if (CameraStreamService.running) startService(new Intent(this, CameraStreamService.class)
                     .setAction(CameraStreamService.ACTION_RECONFIGURE));
             Toast.makeText(this, "录像设置已保存", Toast.LENGTH_SHORT).show();
