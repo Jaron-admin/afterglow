@@ -340,6 +340,6 @@ public final class Prefs {
                 getInt(KEY_RESERVE, 256) * 1024L * 1024L,
                 getInt(KEY_SEGMENT_SIZE, 256) * 1024L * 1024L,
                 getBool(KEY_LOOP, true),
-                microphoneEnabled() && getBool(KEY_RECORD_AUDIO, true));
+                RecordingAudio.fileAudio(microphoneEnabled(), getBool(KEY_RECORD_AUDIO, true)));
     }
 }

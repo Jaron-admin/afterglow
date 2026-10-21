@@ -1,11 +1,13 @@
 package com.oldphone.ipcam;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -47,23 +49,59 @@ public class RecordingUiShots {
 
     private void capture(String theme) throws Exception {
         prepare();
+        Prefs.setInt(Prefs.KEY_RECORDING, 2);
+        Prefs.setBool(Prefs.KEY_MOTION, true);
+        Prefs.setBool(Prefs.KEY_SOUND, true);
+        Prefs.setBool(Prefs.KEY_MICROPHONE, true);
+        seedToday();
         ActivityControllerHold<MainActivity> main = launch(MainActivity.class);
         try {
             settle(8);
             check(contains(root(main.activity), "录制声音"), "main screen is missing 录制声音");
             check(contains(root(main.activity), "开始"), "main screen is missing the start button");
-            window(main.activity, file(theme, "main"));
+            check(contains(root(main.activity), "录制设置"), "main screen is missing the settings card");
+            check(contains(root(main.activity), "录像列表"), "main screen is missing the library card");
+            check(contains(root(main.activity), "画面与推流"), "main screen is missing the stream card");
+            check(contains(root(main.activity), "事件录像 · 画面+声音"), "recording card has no status");
+            waitUntil(root(main.activity), "今天 3 段", 40);
+            check(main.activity.findViewById(R.id.settingsPanel).getVisibility() == View.GONE,
+                    "quality settings are still on the home screen");
+            scrollContent(main.activity, file(theme, "main"));
         } finally { main.close(); }
+
+        prepare();
+        Intent streamIntent = new Intent();
+        streamIntent.putExtra(MainActivity.EXTRA_STREAM_PAGE, true);
+        ActivityControllerHold<MainActivity> stream = launch(MainActivity.class, streamIntent);
+        try {
+            settle(8);
+            check(contains(root(stream.activity), "画面与推流"), "stream page has no title");
+            check(contains(root(stream.activity), "画质与输出"), "stream page is missing quality");
+            check(contains(root(stream.activity), "锁定当前方向"), "stream page is missing orientation lock");
+            check(stream.activity.findViewById(R.id.cbOrientationLock) instanceof CompoundButton,
+                    "orientation lock is not a switch");
+            check(!(stream.activity.findViewById(R.id.cbOrientationLock) instanceof android.widget.CheckBox),
+                    "orientation lock is still a checkbox");
+            check(stream.activity.findViewById(R.id.previewPanel).getVisibility() == View.GONE,
+                    "stream page still shows the preview");
+            scrollContent(stream.activity, file(theme, "stream"));
+        } finally { stream.close(); }
 
         prepare();
         Prefs.setInt(Prefs.KEY_RECORDING, 2);
         Prefs.setBool(Prefs.KEY_SOUND, true);
+        Prefs.setBool(Prefs.KEY_MICROPHONE, false);
         ActivityControllerHold<RecordingSettingsActivity> settings = launch(RecordingSettingsActivity.class);
         try {
             settle(8);
             check(contains(root(settings.activity), "录制方式"), "settings are missing the mode card");
             check(contains(root(settings.activity), "画面变动"), "settings are missing motion");
             check(contains(root(settings.activity), "声音触发"), "settings are missing sound");
+            check(!contains(root(settings.activity), "录像里保留声音"), "file-audio switch is still shown");
+            CompoundButton sound = labeled(root(settings.activity), "声音触发");
+            check(sound != null && !sound.isEnabled(), "sound trigger stays enabled while mic is off");
+            check(contains(root(settings.activity), "请先打开主界面的「录制声音」"),
+                    "disabled sound trigger has no explanation");
             content(settings.activity, file(theme, "settings"));
             Button advanced = button(root(settings.activity), "展开高级");
             check(advanced != null, "advanced section is missing its expand button");
@@ -76,6 +114,7 @@ public class RecordingUiShots {
         } finally { settings.close(); }
 
         prepare();
+        clearRecordings();
         ActivityControllerHold<RecordingsActivity> empty = launch(RecordingsActivity.class);
         try {
             waitUntil(root(empty.activity), "还没有录像", 40);
@@ -109,9 +148,34 @@ public class RecordingUiShots {
         Prefs.setBool(Prefs.KEY_SOUND, false);
     }
 
-    private static void seedRecordings() throws Exception {
+    private static void seedToday() throws Exception {
+        clearRecordings();
+        File root = recordingsRoot();
+        long now = System.currentTimeMillis();
+        clip(root, "1729000000011-aaaabbbb-1111-2222-3333-444455556661",
+                now - 180_000L, 20_000L, "motion", "画面变动", false, false);
+        clip(root, "1729000000012-bbbbcccc-1111-2222-3333-444455556662",
+                now - 120_000L, 20_000L, "sound", "声音触发", false, false);
+        clip(root, "1729000000013-ccccdddd-1111-2222-3333-444455556663",
+                now - 60_000L, 20_000L, "motion,sound", "画面变动", false, false);
+    }
+
+    private static void clearRecordings() {
+        File root = new File(RuntimeEnvironment.getApplication().getFilesDir(), "recordings");
+        File[] files = root.listFiles();
+        if (files == null) return;
+        for (File file : files) check(file.delete(), "could not clear " + file.getName());
+    }
+
+    private static File recordingsRoot() {
         File root = new File(RuntimeEnvironment.getApplication().getFilesDir(), "recordings");
         check(root.isDirectory() || root.mkdirs(), "could not create recordings");
+        return root;
+    }
+
+    private static void seedRecordings() throws Exception {
+        clearRecordings();
+        File root = recordingsRoot();
         Calendar calendar = Calendar.getInstance();
         calendar.set(Calendar.HOUR_OF_DAY, 0);
         calendar.set(Calendar.MINUTE, 20);
@@ -170,7 +234,14 @@ public class RecordingUiShots {
     }
 
     private static <T extends Activity> ActivityControllerHold<T> launch(Class<T> type) {
-        return new ActivityControllerHold<T>(Robolectric.buildActivity(type).setup());
+        return launch(type, null);
+    }
+
+    private static <T extends Activity> ActivityControllerHold<T> launch(Class<T> type, Intent intent) {
+        org.robolectric.android.controller.ActivityController<T> controller = intent == null
+                ? Robolectric.buildActivity(type)
+                : Robolectric.buildActivity(type, intent);
+        return new ActivityControllerHold<T>(controller.setup());
     }
 
     private static void settle(int rounds) throws Exception {
@@ -193,6 +264,19 @@ public class RecordingUiShots {
             if (rows.getAdapter().isEnabled(i)) return i;
         }
         throw new AssertionError("recordings list has no clip row");
+    }
+
+    private static CompoundButton labeled(View view, String label) {
+        if (view instanceof CompoundButton && label.contentEquals(((CompoundButton) view).getText()))
+            return (CompoundButton) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                CompoundButton found = labeled(group.getChildAt(i), label);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static Button button(View view, String label) {
@@ -224,6 +308,20 @@ public class RecordingUiShots {
     private static void window(Activity activity, File file) {
         View decor = activity.getWindow().getDecorView();
         draw(decor, decor.getWidth(), decor.getHeight(), file);
+    }
+
+    private static void scrollContent(Activity activity, File file) {
+        ScrollView scroll = (ScrollView) activity.findViewById(R.id.svMain);
+        View target = scroll.getChildAt(0);
+        int width = scroll.getWidth();
+        if (width <= 0) width = activity.getWindow().getDecorView().getWidth();
+        target.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int measuredWidth = target.getMeasuredWidth();
+        int measuredHeight = target.getMeasuredHeight();
+        target.layout(0, 0, measuredWidth, measuredHeight);
+        draw(target, measuredWidth, measuredHeight, file);
     }
 
     private static void content(Activity activity, File file) {

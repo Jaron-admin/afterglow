@@ -37,7 +37,8 @@ public final class RecordingSettingsActivity extends Activity {
     private Spinner schedule, recordSize;
     private Choice segment, pre, post, quota, retention, segmentSize;
     private EditText reserve;
-    private CompoundButton recordAudio, motion, sound;
+    private CompoundButton motion, sound;
+    private TextView soundNote;
     private TextView usage, startTime, endTime, advancedSummary;
     private Button advancedButton;
     private final List<String> targetIds = new ArrayList<String>();
@@ -76,9 +77,8 @@ public final class RecordingSettingsActivity extends Activity {
         motion = check("画面变动", Prefs.motionEnabled());
         motionSensitivity = choice("画面灵敏度", new String[]{"低", "中", "高"}, Prefs.sensitivity());
         sound = check("声音触发", Prefs.getBool(Prefs.KEY_SOUND, false));
+        soundNote = note("");
         soundSensitivity = choice("声音灵敏度", new String[]{"低", "中", "高"}, Prefs.soundSensitivity());
-        recordAudio = check("录像里保留声音", Prefs.getBool(Prefs.KEY_RECORD_AUDIO, true));
-        note("直播和声响检测用主界面的「录制声音」。这里只决定要不要把声音写进文件。");
 
         advancedOpen = saved != null && saved.getBoolean("advanced", false);
         if (!advancedOpen) advancedOpen = RecordingChoices.indexOf(RecordingChoices.SEGMENT_MIB,
@@ -146,7 +146,7 @@ public final class RecordingSettingsActivity extends Activity {
         int bitrateIndex = Prefs.getInt(Prefs.KEY_BITRATE, 2);
         if (bitrateIndex < 0 || bitrateIndex >= Prefs.BITRATE_LABELS.length) bitrateIndex = 2;
         bitrate = choice("码率", Prefs.BITRATE_LABELS, bitrateIndex);
-        note("码率与主页是同一项。帧率仍用主页的设置。改分辨率会短暂重启采集，并结束当前片段。");
+        note("码率与「画面与推流」是同一项。帧率也在那里。改分辨率会短暂重启采集，并结束当前片段。");
 
         card(advancedPanel, "存储", "满了以后怎么处理，以及保留多久。", "存", R.color.primary);
         List<RecordingStore.Target> targets = RecordingStore.targets(this);
@@ -284,9 +284,13 @@ public final class RecordingSettingsActivity extends Activity {
     }
     private void syncAudio() {
         boolean mic = Prefs.microphoneEnabled();
-        recordAudio.setEnabled(mic);
-        sound.setEnabled(mic);
-        soundSensitivity.setEnabled(mic && sound.isChecked());
+        boolean soundOn = RecordingAudio.soundControlsEnabled(mic);
+        sound.setEnabled(soundOn);
+        sound.setTextColor(color(soundOn ? R.color.on_surface : R.color.on_surface_disabled));
+        soundSensitivity.setEnabled(RecordingAudio.soundSensitivityEnabled(mic, sound.isChecked()));
+        String note = RecordingAudio.soundDisabledNote(mic);
+        soundNote.setText(note);
+        soundNote.setVisibility(note.length() == 0 ? View.GONE : View.VISIBLE);
     }
     private void syncAdvanced() {
         advancedButton.setText(advancedOpen ? "收起高级" : "展开高级");
@@ -388,12 +392,13 @@ public final class RecordingSettingsActivity extends Activity {
             new RecordingOptions(Math.max(1, recordMode), seg, before, after, days,
                     (long) cap << 30, (long) free << 20, (long) max << 20,
                     policy.getSelectedItemPosition() == 0,
-                    Prefs.microphoneEnabled() && recordAudio.isChecked());
+                    RecordingAudio.fileAudio(Prefs.microphoneEnabled(),
+                            Prefs.getBool(Prefs.KEY_RECORD_AUDIO, true)));
             if (recordMode == 2 && !motion.isChecked()
                     && !(Prefs.microphoneEnabled() && sound.isChecked()))
                 throw new IllegalArgumentException("事件录像需要开启画面变动，或先在主界面打开录制声音再开声音触发");
             if (recordMode == 0 && Prefs.mode() == Prefs.MODE_LOCAL)
-                throw new IllegalArgumentException("仅本地模式需要开启录像，请先在主页更改输出方式");
+                throw new IllegalArgumentException("仅本地模式需要开启录像，请先在「画面与推流」更改输出方式");
             if (Prefs.microphoneEnabled() && Build.VERSION.SDK_INT >= 23
                     && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION);
@@ -412,7 +417,6 @@ public final class RecordingSettingsActivity extends Activity {
             Prefs.setInt(Prefs.KEY_PRE_ROLL, before);
             Prefs.setInt(Prefs.KEY_POST_ROLL, after);
             Prefs.setBool(Prefs.KEY_LOOP, policy.getSelectedItemPosition() == 0);
-            Prefs.setBool(Prefs.KEY_RECORD_AUDIO, recordAudio.isChecked());
             Prefs.setBool(Prefs.KEY_MOTION, motion.isChecked());
             Prefs.setBool(Prefs.KEY_SOUND, sound.isChecked());
             Prefs.setInt(Prefs.KEY_SENSITIVITY, motionSensitivity.getSelectedItemPosition());
