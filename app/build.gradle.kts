@@ -33,10 +33,21 @@ android {
     packaging {
         resources.excludes += setOf("META-INF/*.kotlin_module")
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+        unitTests.all {
+            it.systemProperty("roborazzi.test.record", "true")
+        }
+    }
 }
 
-// 本项目刻意不引入任何第三方 / AndroidX 依赖：
-// 1) 让 APK 体积保持在 ~100KB 级别，老机器安装和启动更快；
-// 2) 让 minSdk 19 不受 AndroidX 最低版本限制。
+// 正式 APK 仍然不依赖第三方库或 AndroidX，体积和 minSdk 19 保持不变。
+// Robolectric 与 Roborazzi 只用于界面截图测试。
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
+    testImplementation("androidx.compose.ui:ui-test:1.7.8")
 }

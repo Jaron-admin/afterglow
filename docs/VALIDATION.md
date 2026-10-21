@@ -4,7 +4,7 @@ Checked on 2026-10-21 with JDK 17. The same JVM suites as `tests/run.ps1` passed
 
 The interface follows the system light and dark theme. Warm orange `#C2410C` is the filled button color with white text. Small orange text uses `#9A3412` on the light background and `#FDBA74` on the dark background. Cyan is the second accent. Reason chips are orange, cyan and indigo so the three reasons stay distinct.
 
-No phone was used. An API 33 x86_64 emulator (pixel_6, 1080×2400) was installed. `emulator -accel-check` reported KVM usable and `/dev/kvm` was writable, but the guest never printed a kernel log. It stayed at “Activated packet streamer for bluetooth emulation”, the process stayed almost idle, and `adb` showed `emulator-5554 offline`. No screenshots were captured.
+No phone was used. API 33 and API 30 x86_64 emulators were installed. `emulator -accel-check` reported KVM usable, and the API 30 image was cold-booted with `-no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data` and `hw.bluetooth=no`. Neither guest printed a kernel log or became an adb device. The screenshots on the pull request are from `RecordingUiShots` (Robolectric 4.17 native graphics + Roborazzi), not from a device framebuffer.
 
 # Validation — HA audio and recording playback
 
