@@ -34,7 +34,9 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
+import android.widget.CompoundButton;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -48,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class MainActivity extends Activity {
 
     private static final int REQ_PERM = 100;
+    private static final int REQ_MIC = 101;
 
     /** 外部拉起推流用的 intent extra */
     public static final String EXTRA_AUTOSTART = "autostart";
@@ -79,6 +82,8 @@ public final class MainActivity extends Activity {
     private NetUtils.Address displayedAddress;
     private String selectedAddressKey;
     private Button btnToggle;
+    private Switch swRecordSound;
+    private boolean suppressMic, pendingMic;
     private TextView tvRecordingStatus;
     private TextView tvLastEvent;
     private boolean startAfterPermission;
@@ -426,6 +431,7 @@ public final class MainActivity extends Activity {
         tvMjpeg = (TextView) findViewById(R.id.tvMjpeg);
         tvSnapshot = (TextView) findViewById(R.id.tvSnapshot);
         btnToggle = (Button) findViewById(R.id.btnToggle);
+        swRecordSound = (Switch) findViewById(R.id.swRecordSound);
 
         rowRtsp = findViewById(R.id.rowRtsp);
         rowMjpeg = findViewById(R.id.rowMjpeg);
@@ -492,10 +498,10 @@ public final class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         Button settings = new Button(this);
-        settings.setText("录像与检测");
+        settings.setText("录制设置");
         settings.setTextSize(13);
         settings.setAllCaps(false);
-        settings.setTextColor(getResources().getColor(R.color.primary));
+        settings.setTextColor(getResources().getColor(R.color.accent_text));
         settings.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 startActivity(new Intent(MainActivity.this, RecordingSettingsActivity.class));
@@ -505,7 +511,7 @@ public final class MainActivity extends Activity {
         recordings.setText("录像列表");
         recordings.setTextSize(13);
         recordings.setAllCaps(false);
-        recordings.setTextColor(getResources().getColor(R.color.primary));
+        recordings.setTextColor(getResources().getColor(R.color.secondary));
         recordings.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 startActivity(new Intent(MainActivity.this, RecordingsActivity.class));
@@ -873,6 +879,25 @@ public final class MainActivity extends Activity {
                 }
             }
         });
+        suppressMic = true;
+        swRecordSound.setChecked(Prefs.microphoneEnabled());
+        suppressMic = false;
+        swRecordSound.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(CompoundButton button, boolean checked) {
+                if (suppressMic) return;
+                if (checked && Build.VERSION.SDK_INT >= 23
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    suppressMic = true;
+                    button.setChecked(false);
+                    suppressMic = false;
+                    pendingMic = true;
+                    requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+                    return;
+                }
+                pendingMic = false;
+                applyMicrophone(checked);
+            }
+        });
 
         spCamera.setOnItemSelectedListener(new SimpleSelect() {
             @Override
@@ -988,7 +1013,7 @@ public final class MainActivity extends Activity {
                     suppressListener = true;
                     spMode.setSelection(Prefs.mode(), false);
                     suppressListener = false;
-                    Toast.makeText(MainActivity.this, "请先在“录像与检测”启用录像", Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "请先在“录制设置”启用录像", Toast.LENGTH_LONG).show();
                     return;
                 }
                 updateStreamSetting(Prefs.KEY_MODE, Prefs.MODE_BOTH, position);
@@ -1323,9 +1348,31 @@ public final class MainActivity extends Activity {
                 }
             } else {
                 Toast.makeText(this, Prefs.microphoneEnabled()
-                        ? "未启动：需要摄像头和麦克风权限；也可在设置中关闭麦克风"
+                        ? "未启动：需要摄像头和麦克风权限；也可关闭「录制声音」"
                         : "未启动：需要摄像头权限", Toast.LENGTH_LONG).show();
             }
+        } else if (requestCode == REQ_MIC) {
+            pendingMic = false;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                suppressMic = true;
+                swRecordSound.setChecked(true);
+                suppressMic = false;
+                applyMicrophone(true);
+            } else {
+                Toast.makeText(this, "没有麦克风权限，录制声音保持关闭", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void applyMicrophone(boolean enabled) {
+        boolean was = Prefs.microphoneEnabled();
+        Prefs.setBool(Prefs.KEY_MICROPHONE, enabled);
+        if (was == enabled || !CameraStreamService.running) return;
+        try {
+            startService(new Intent(this, CameraStreamService.class)
+                    .setAction(CameraStreamService.ACTION_RECONFIGURE));
+        } catch (Throwable failure) {
+            Toast.makeText(this, "录制声音未能立刻生效", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1392,7 +1439,12 @@ public final class MainActivity extends Activity {
 
         btnToggle.setText(running ? R.string.btn_stop : R.string.btn_start);
         btnToggle.setTextColor(getResources().getColor(running
-                ? R.color.on_surface : R.color.on_primary));
+                ? R.color.on_danger : R.color.on_primary));
+        if (swRecordSound != null && swRecordSound.isChecked() != Prefs.microphoneEnabled()) {
+            suppressMic = true;
+            swRecordSound.setChecked(Prefs.microphoneEnabled());
+            suppressMic = false;
+        }
         btnToggle.setBackgroundResource(running
                 ? R.drawable.bg_btn_danger : R.drawable.bg_btn_primary);
 

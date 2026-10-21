@@ -31,7 +31,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/app_subtitle"
-                android:textColor="@color/primary"
+                android:textColor="@color/accent_text"
                 android:textSize="11sp" />
         </LinearLayout>
         <TextView
@@ -109,6 +109,32 @@
                                 android:visibility="gone" />
                         </LinearLayout>
                     </FrameLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <Switch
+                            android:id="@+id/swRecordSound"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:contentDescription="@string/record_sound_description"
+                            android:minHeight="48dp"
+                            android:text="@string/record_sound"
+                            android:textColor="@color/on_surface"
+                            android:textSize="15sp" />
+                        <Button
+                            android:id="@+id/btnToggle"
+                            style="@style/Button.Primary"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/touch_target"
+                            android:layout_marginLeft="8dp"
+                            android:layout_marginTop="0dp"
+                            android:layout_weight="1"
+                            android:text="@string/btn_start" />
+                    </LinearLayout>
                     <TextView
                         android:id="@+id/tvGeometry"
                         android:layout_width="match_parent"
@@ -184,10 +210,6 @@
                         android:text="@string/lock_orientation"
                         android:textColor="@color/on_surface"
                         android:textSize="13sp" />
-                    <Button
-                        android:id="@+id/btnToggle"
-                        style="@style/Button.Primary"
-                        android:text="@string/btn_start" />
                     <TextView
                         android:id="@+id/tvDetail"
                         android:layout_width="match_parent"

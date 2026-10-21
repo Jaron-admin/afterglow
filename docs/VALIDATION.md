@@ -1,3 +1,11 @@
+# Validation — recording list, settings and color
+
+Checked on 2026-10-21 with JDK 17. The same JVM suites as `tests/run.ps1` passed, including `RecordingLibraryTest` (reason chips, day folders, export file names). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors.
+
+The interface follows the system light and dark theme. Warm orange `#C2410C` is the filled button color with white text. Small orange text uses `#9A3412` on the light background and `#FDBA74` on the dark background. Cyan is the second accent. Reason chips are orange, cyan and indigo so the three reasons stay distinct.
+
+No phone was used. An API 33 x86_64 emulator (pixel_6, 1080×2400) was installed. `emulator -accel-check` reported KVM usable and `/dev/kvm` was writable, but the guest never printed a kernel log. It stayed at “Activated packet streamer for bluetooth emulation”, the process stayed almost idle, and `adb` showed `emulator-5554 offline`. No screenshots were captured.
+
 # Validation — HA audio and recording playback
 
 Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12. No phone or Home Assistant frontend was available, so the numbers below are from the unit fixtures, not a live player.

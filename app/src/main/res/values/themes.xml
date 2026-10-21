@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- API 19~20：Holo 深色、无系统 ActionBar（头部自绘） -->
-    <style name="AppTheme" parent="@android:style/Theme.Holo.NoActionBar">
+    <!-- API 19–20 follow the system light theme. Night resources replace this. -->
+    <style name="AppTheme" parent="@android:style/Theme.Holo.Light.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="android:windowContentOverlay">@null</item>

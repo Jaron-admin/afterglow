@@ -282,6 +282,29 @@ public final class RecordingStore {
             pending.properties.setProperty("thumbnail", "true");
         }
     }
+    /** Cache a JPEG for a finished clip. Existing index fields stay as they are. */
+    void attachThumbnail(String id, byte[] jpeg) throws IOException {
+        if (jpeg == null || jpeg.length < 4 || jpeg.length > 512 * 1024) return;
+        if ((jpeg[0] & 255) != 0xFF || (jpeg[1] & 255) != 0xD8) return;
+        synchronized (FILE_LOCK) {
+            Properties props = read(id);
+            if (!"complete".equals(props.getProperty("state"))) return;
+            disk.requireWritable(root);
+            File temporary = managed(id, ".jpg.tmp");
+            File dest = managed(id, ".jpg");
+            FileOutputStream out = new FileOutputStream(temporary);
+            try {
+                out.write(jpeg);
+                out.getFD().sync();
+            } finally { out.close(); }
+            if (!temporary.renameTo(dest)) {
+                if (dest.exists() && !dest.delete()) throw new IOException("无法保存缩略图");
+                if (!temporary.renameTo(dest)) throw new IOException("无法保存缩略图");
+            }
+            props.setProperty("thumbnail", "true");
+            write(id, props);
+        }
+    }
     File thumbnail(String id) throws IOException {
         synchronized (FILE_LOCK) {
             Clip clip = null;

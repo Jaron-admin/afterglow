@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#C2410C</color>
+    <color name="primary_dark">#0C0A09</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="accent_text">#FDBA74</color>
+    <color name="secondary">#5EEAD4</color>
+    <color name="danger">#DC2626</color>
+    <color name="on_danger">#FFFFFF</color>
+    <color name="success">#6EE7B7</color>
+    <color name="background">#14110F</color>
+    <color name="surface">#231F1C</color>
+    <color name="on_surface">#FAF7F2</color>
+    <color name="on_surface_variant">#D6D3D1</color>
+    <color name="on_surface_disabled">#A8A29E</color>
+    <color name="outline">#3F3832</color>
+    <color name="divider">#3F3832</color>
+    <color name="preview_bg">#0C0A09</color>
+    <color name="preview_placeholder">#D6D3D1</color>
+    <color name="chip_running_bg">#431407</color>
+    <color name="chip_running_fg">#FDBA74</color>
+    <color name="chip_stopped_bg">#292524</color>
+    <color name="chip_stopped_fg">#D6D3D1</color>
+    <color name="icon_well">#3A2A22</color>
+    <color name="tag_motion_bg">#431407</color>
+    <color name="tag_motion_fg">#FDBA74</color>
+    <color name="tag_sound_bg">#042F2E</color>
+    <color name="tag_sound_fg">#99F6E4</color>
+    <color name="tag_schedule_bg">#1E1B4B</color>
+    <color name="tag_schedule_fg">#C7D2FE</color>
+    <color name="selection_bg">#2A2118</color>
+</resources>
