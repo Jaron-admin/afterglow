@@ -87,24 +87,21 @@
     <string name="network_vpn">VPN / 隧道</string>
     <string name="network_mobile">移动网络</string>
     <string name="network_other">其他网卡</string>
-    <string name="address_no_ipv4">未检测到可用的 IPv4 地址。请连接 Wi-Fi 或有线网络；连接后这里会自动更新。此列表暂不展示 IPv6。</string>
-    <string name="address_hint_lan">10.* 也可以是正常的局域网地址，不必改成 192.168.*。这里只列出本机实际拥有的 IPv4；来源按网卡名称识别。选择后点下方地址复制，开启采集后使用。</string>
-    <string name="address_hint_vpn">按网卡名称识别为 VPN / 隧道，不代表一定是 Tailscale。访问方需有相应路由和权限；家里的 HA 通常优先用手机的 Wi-Fi 地址。开启采集后使用。</string>
-    <string name="address_hint_mobile">移动网络地址通常不能被其他设备直接访问，复制地址不代表已经连通。接入家里的 HA 建议连接 Wi-Fi；开启采集后使用。</string>
     <string name="addr_http">HTTP</string>
-    <string name="ha_setup_hint">HA 设备：%1$s\n开启摄像头后，在 Home Assistant 安装 Afterglow 集成，并从“设备与服务”添加。自动发现需要 HA 与手机在同一局域网；手动添加时可使用 HTTP 地址。</string>
-    <string name="ha_identity_unavailable">设备身份暂不可用</string>
-    <string name="ha_local_only">仅本地录像：不提供网络访问或 Home Assistant 发现。</string>
     <string name="viewer_http_auth_title">此设备需要 HTTP 验证</string>
     <string name="viewer_http_auth_hint">手机内的预览暂不支持输入 HTTP 用户名和密码。可在浏览器打开 HTTP 地址后登录，或在 Home Assistant 中配置访问凭据。</string>
     <string name="copy_http_address">复制 HTTP 地址</string>
-    <string name="ha_setup_title">接入 HA 教程</string>
+    <string name="ha_setup_title">接入 Home Assistant</string>
     <string name="ha_online_guide">在线教程</string>
-    <string name="ha_address_not_ready">请先选择网络输出模式，并连接 Wi-Fi。</string>
+    <string name="ha_address_not_ready">请先连接 Wi-Fi，并选择 RTSP + MJPEG。</string>
     <string name="browser_unavailable">未找到浏览器，请在项目 README 查看教程。</string>
-    <string name="ha_guide_url" translatable="false">https://github.com/Jaron-admin/afterglow/blob/codex/ha-discovery-recordings/homeassistant/README.md</string>
-    <string name="ha_setup_steps">1. 准备手机\n将录像手机和家里的 Home Assistant（HA）连到互通的局域网。输出模式推荐“RTSP + MJPEG”，点“开始”。接入时保持采集运行，不能选择“仅本地录像”。\n\n2. 安装 HA 集成\n从在线教程获取配套集成包，或下载同版本源码。将 homeassistant/custom_components/afterglow 整个文件夹复制到 HA 的配置目录，最终应有 /config/custom_components/afterglow/manifest.json。不要多套一层文件夹。这是自定义集成，不是在 HA 应用商店搜索安装。\n\nHA OS 可通过 Samba、Studio Code Server 或 SSH 管理配置文件；HA Container 要放到映射为 /config 的宿主机目录。复制后完整重启 HA，仅重新加载配置不够。\n\n3. 添加设备\n在 HA“设置 → 设备与服务”中添加发现的 Afterglow。没有发现时，选“添加集成 → Afterglow”，手动输入手机 HTTP 地址（8080 端口）。优先使用家中 HA 能访问的 Wi-Fi 地址；10.* 可以是正常内网地址。\n\n当前选择的 HTTP 地址：\n%1$s\n\n如果手机开启“访问验证（HTTP）”，在 HA 填相同用户名和密码。原有“通用摄像头”不会自动变成 Afterglow 集成。\n\n4. 看实时画面和录像\n实时画面在 HA 的摄像头实体中查看，可添加到仪表盘。在“媒体 → Afterglow → 设备”中浏览已完成录像，打开片段并拖动进度。只显示当前所选存储里的已完成片段；正在录制的片段要结束后才出现。\n\n5. 外出通过 Tailscale 访问\n在外面的手机连接现有 Tailscale，再打开家里的 HA。录像由 HA 转发：外面的手机 → Tailscale → 家里的 HA → 录像手机。只要家中 HA 能访问录像手机，就不要求录像手机再安装 Tailscale。自动发现仍在家中局域网完成。\n\n6. 常见问题\n搜索不到集成：核对 manifest.json 的位置，并完整重启 HA。\n没有发现设备：检查访客 Wi-Fi、客户端隔离、VLAN 或容器网络；可先手动添加 HTTP 地址。\n地址打不开：先确认已开始采集、不是仅本地模式，而且 HA 服务器能访问手机 8080 端口。\n录像列表为空：确认录像已完成、存储位置正确，且网络输出和采集仍在运行。\n\nIP 变化后，专用集成会在能收到局域网发现信息时跟踪同一设备；数字 IP 本身仍由路由器分配。卸载或清除手机应用数据会重置身份并可能删除录像，请先导出重要片段。HTTP 验证不保护 RTSP，使用可信局域网或 VPN，无需将手机端口直接开放到公网。</string>
+    <string name="ha_guide_url" translatable="false">https://github.com/Jaron-admin/afterglow/blob/main/homeassistant/README.md</string>
+    <string name="ha_setup_steps">使用 HA 自带的 Generic Camera（通用摄像头）即可看实时画面。\n\n1. 准备手机\n手机和 HA 连到同一局域网。在余光选择 RTSP + MJPEG，点击“开始”。\n\n2. 添加摄像头\n在 HA 打开“设置 → 设备与服务 → 添加集成”，搜索 Generic Camera（通用摄像头）。\n\n3. 填写地址\n把 JPEG 快照填入 Still Image URL（静态图像 URL）：\n%1$s\n\n把 RTSP 填入 Stream Source（流来源）：\n%2$s\n\n手机开启“访问验证（HTTP）”时，填写相同用户名、密码，认证选 Basic；未开启则留空。RTSP 传输保持 TCP。下方按钮可分别复制两条地址。\n\n4. 查看画面\n保存并按提示完成配置，打开新增摄像头查看实时画面，再按需添加到仪表盘。\n\n此方式用于实时画面。浏览手机录像请看“进阶”。\n\n常见问题\n• 连不上？确认手机已点“开始”、模式为 RTSP + MJPEG，HA 能访问所选地址；10.x.x.x 也可以是正常内网地址。开启访问验证时核对用户名、密码和 Basic 认证。\n• 黑屏或卡顿？核对两条地址没有填反，RTSP 传输为 TCP，并打开实时画面。改善 Wi-Fi 信号；旧手机可先降低分辨率再比较。\n• 手机 IP 变了？在 Generic Camera 的配置中更新两条地址；也可在路由器为手机保留地址，减少变动。</string>
+    <string name="ha_copy_rtsp">复制 RTSP</string>
+    <string name="ha_copy_snapshot">复制快照</string>
+    <string name="ha_advanced_title">进阶</string>
+    <string name="ha_advanced_steps">需要在 HA 浏览手机录像时，可通过 HACS 安装 Afterglow。尚未安装 HACS，请先按“在线教程”中的官方指南安装与配置。\n\n在 HACS 右上角菜单打开“自定义仓库”，填入下面的网址，类别选 Integration（集成）：\nhttps://github.com/Jaron-admin/afterglow\n\n添加后打开 Afterglow，点击 Download（下载）。完整重启 HA，再到“设置 → 设备与服务 → 添加集成 → Afterglow”，选择发现的设备或填写手机 HTTP 地址：\n%1$s\n\n开启访问验证时，填写手机上相同的用户名和密码。原来的 Generic Camera 不会自动转换。\n\n在“媒体 → Afterglow → 设备”中播放已完成的录像并拖动进度。只显示当前所选存储中的片段；浏览时保持手机在网络模式下采集。\n\n专用集成可在收到局域网发现信息时跟随手机 IP 变化。外出时继续通过现有 Tailscale 打开家里的 HA，由 HA 连接余光手机。</string>
     <string name="help_title">帮助</string>
-    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n在 Home Assistant 安装 Afterglow 集成后，从“设备与服务”添加本机显示的 HA 设备。集成会按设备身份更新变化的 IP，HTTP 地址也可用于手动添加。原有通用摄像头条目不会自动迁移。HTTP 身份与录像服务在 RTSP 模式下仍可用，MJPEG 与快照只在启用 MJPEG 时提供。外出时可通过 Tailscale 访问家里的 HA；自动发现仍由家中局域网完成。卸载或清除应用数据会重置设备身份。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
 </resources>

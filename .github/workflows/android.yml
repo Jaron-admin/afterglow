@@ -11,6 +11,18 @@ permissions:
   contents: read
 
 jobs:
+  hacs:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate HACS custom repository
+        uses: hacs/action@main
+        with:
+          category: integration
+          comment: 'false'
+          # This public Android project has not selected an open-source license.
+          # Validate HACS custom-repository support, not default-catalog eligibility.
+          ignore: 'license'
   homeassistant:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +35,7 @@ jobs:
       - name: Home Assistant integration boundary tests
         run: python -m unittest discover -s homeassistant/tests -v
       - name: Compile integration
-        run: python -m compileall -q homeassistant/custom_components/afterglow
+        run: python -m compileall -q custom_components/afterglow
   build:
     runs-on: windows-latest
     steps:

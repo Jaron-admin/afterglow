@@ -1,4 +1,32 @@
-# Validation — Afterglow 1.4.1
+# Validation — Afterglow 1.4.2
+
+Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12.
+
+- Complete `tests/run.ps1` passed, including the existing 68 network-address checks,
+  frame pacing, buffer ownership, codec, discovery, HTTP range and recording suites.
+- `python -m unittest discover -s homeassistant/tests -v`: all 27 tests passed.
+  Four new layout tests cover root placement, HACS configuration, manifest metadata
+  and the bundled brand icon. They failed before migration and passed afterward.
+- Final Gradle `assembleDebug lintDebug` passed: 0 errors and 99 warnings.
+- Manual APK version 1.4.2/code 9, package `com.oldphone.ipcam`, min SDK 19/target 33,
+  passed v1/v2/v3 signature verification using the certificate listed for 1.4.1 below.
+- Source review confirmed four Generic Camera steps and three common questions in
+  both user guides and the App; installation/maintenance detail is separate.
+  The open guide refreshes displayed/copied addresses after network changes and
+  disables unavailable addresses. Address explanation views were removed.
+- Runtime integration files were moved without behavior changes; the manifest version
+  is now 1.4.2. Local structural checks are not full HACS validation. GitHub Actions
+  runs the official HACS validator, ignoring only the license policy because this
+  repository has not chosen an open-source license. Support is for custom repositories,
+  not inclusion in the default HACS catalog. See the release commit's Actions results.
+
+Device UI, physical camera performance, HA frontend playback and the user's Tailscale
+route still require target-device acceptance. No hardware performance result is claimed.
+The APK uses the same signing certificate as the delivered 1.4.0/1.4.1 test packages,
+but differs from the public 1.3.1 certificate recorded below. Export important recordings
+and note settings before any reinstall; uninstalling removes app-private recordings.
+
+# Previous validation — Afterglow 1.4.1
 
 Checked on 2026-10-21 with the same JDK 17 / Android 36 toolchain.
 

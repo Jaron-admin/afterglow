@@ -71,9 +71,8 @@ public final class MainActivity extends Activity {
     private TextView tvMjpeg;
     private TextView tvSnapshot;
     private TextView tvHttp;
-    private TextView tvHaInfo;
     private TextView btnAddress;
-    private TextView tvAddressHint;
+    private AlertDialog haSetupDialog;
     private List<NetUtils.Address> currentAddresses = new ArrayList<NetUtils.Address>();
     private NetUtils.Address displayedAddress;
     private String selectedAddressKey;
@@ -405,6 +404,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (haSetupDialog != null) haSetupDialog.dismiss();
         previewActive = false;
         previewEpoch++;
         handler.removeCallbacksAndMessages(null);
@@ -430,9 +430,7 @@ public final class MainActivity extends Activity {
         rowSnapshot = findViewById(R.id.rowSnapshot);
         rowHttp = findViewById(R.id.rowHttp);
         tvHttp = (TextView) findViewById(R.id.tvHttp);
-        tvHaInfo = (TextView) findViewById(R.id.tvHaInfo);
         btnAddress = (TextView) findViewById(R.id.btnAddress);
-        tvAddressHint = (TextView) findViewById(R.id.tvAddressHint);
 
         ivPreview = (CropPreviewView) findViewById(R.id.ivPreview);
         flPreview = findViewById(R.id.flPreview);
@@ -1514,23 +1512,10 @@ public final class MainActivity extends Activity {
         btnAddress.setAlpha(available ? 1f : 0.5f);
         btnAddress.setText(available ? getString(R.string.address_choice,
                 addressLabel(displayedAddress), currentAddresses.size()) : unavailable);
-        tvAddressHint.setText(!network ? R.string.ha_local_only
-                : !available ? R.string.address_no_ipv4
-                : displayedAddress.kind == NetUtils.VPN ? R.string.address_hint_vpn
-                : displayedAddress.kind == NetUtils.MOBILE ? R.string.address_hint_mobile
-                : R.string.address_hint_lan);
         rowHttp.setEnabled(available);
         rowHttp.setAlpha(available ? 1f : 0.5f);
         tvHttp.setText(available ? String.format(Locale.US, "http://%s:%d/", ip,
                 CameraStreamService.HTTP_PORT) : unavailable);
-        if (network) {
-            String name;
-            try { name = Prefs.deviceName(); }
-            catch (IllegalStateException identityUnavailable) { name = getString(R.string.ha_identity_unavailable); }
-            tvHaInfo.setText(getString(R.string.ha_setup_hint, name));
-        } else {
-            tvHaInfo.setText(R.string.ha_local_only);
-        }
         rowRtsp.setEnabled(rtsp && available);
         rowMjpeg.setEnabled(mjpeg && available);
         rowSnapshot.setEnabled(mjpeg && available);
@@ -1554,6 +1539,7 @@ public final class MainActivity extends Activity {
             tvSnapshot.setText(String.format(Locale.US, "http://%s:%d/snapshot.jpg", ip,
                     CameraStreamService.HTTP_PORT));
         }
+        updateHaSetupDialog();
     }
 
     private static String addressKey(NetUtils.Address address) {
@@ -1594,10 +1580,64 @@ public final class MainActivity extends Activity {
 
     private void showHaSetup() {
         refreshAddresses();
+        final AlertDialog guide = new AlertDialog.Builder(this)
+                .setTitle(R.string.ha_setup_title)
+                .setMessage(haSetupMessage())
+                .setPositiveButton(R.string.ha_copy_rtsp, null)
+                .setNegativeButton(R.string.ha_copy_snapshot, null)
+                .setNeutralButton(R.string.ha_advanced_title, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) { showHaAdvanced(); }
+                }).create();
+        haSetupDialog = guide;
+        guide.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(DialogInterface dialog) {
+                if (haSetupDialog == guide) haSetupDialog = null;
+            }
+        });
+        guide.show();
+        // Keep the instructions open while either address is copied.
+        guide.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                refreshAddresses();
+                if (rowRtsp.isEnabled()) copy(tvRtsp.getText().toString());
+            }
+        });
+        guide.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                refreshAddresses();
+                if (rowSnapshot.isEnabled()) copy(tvSnapshot.getText().toString());
+            }
+        });
+        updateHaSetupDialog();
+        TextView message = (TextView) guide.findViewById(android.R.id.message);
+        if (message != null) message.setTextIsSelectable(true);
+    }
+
+    private String haSetupMessage() {
+        String unavailable = getString(R.string.ha_address_not_ready);
+        return getString(R.string.ha_setup_steps,
+                rowSnapshot.isEnabled() ? tvSnapshot.getText().toString() : unavailable,
+                rowRtsp.isEnabled() ? tvRtsp.getText().toString() : unavailable);
+    }
+
+    private void updateHaSetupDialog() {
+        if (haSetupDialog == null || !haSetupDialog.isShowing()) return;
+        haSetupDialog.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(rowRtsp.isEnabled());
+        haSetupDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(rowSnapshot.isEnabled());
+        TextView message = (TextView) haSetupDialog.findViewById(android.R.id.message);
+        String updated = haSetupMessage();
+        // Avoid resetting selection/scroll position on every normal status refresh.
+        if (message != null && !updated.contentEquals(message.getText())) {
+            message.setText(updated);
+        }
+    }
+
+    private void showHaAdvanced() {
+        refreshAddresses();
         final String http = rowHttp.isEnabled() ? tvHttp.getText().toString() : null;
         AlertDialog.Builder guide = new AlertDialog.Builder(this)
-                .setTitle(R.string.ha_setup_title)
-                .setMessage(getString(R.string.ha_setup_steps,
+                .setTitle(R.string.ha_advanced_title)
+                .setMessage(getString(R.string.ha_advanced_steps,
                         http == null ? getString(R.string.ha_address_not_ready) : http))
                 .setPositiveButton(android.R.string.ok, null)
                 .setNegativeButton(R.string.ha_online_guide, new DialogInterface.OnClickListener() {

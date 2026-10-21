@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestServer
 
 PACKAGE = "afterglow_test"
 package = types.ModuleType(PACKAGE)
-package.__path__ = [str(ROOT.parent / "custom_components" / "afterglow")]
+package.__path__ = [str(ROOT.parents[1] / "custom_components" / "afterglow")]
 sys.modules[PACKAGE] = package
 
 DEVICE = "4ac472bb-66fb-4fa4-9262-19c77b49d19c"
