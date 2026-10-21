@@ -1,4 +1,25 @@
-# Validation — Afterglow 1.4.0
+# Validation — Afterglow 1.4.1
+
+Checked on 2026-10-21 with the same JDK 17 / Android 36 toolchain.
+
+- The complete `tests/run.ps1` suite passed, including 68 new address checks:
+  LAN/VPN enumeration order, ordinary 10.x LAN addresses, multiple interfaces,
+  duplicate addresses, interface state, unusable IPv4/IPv6 filtering and empty results.
+- Gradle `assembleDebug lintDebug` passed with 0 errors and 99 warnings.
+- The manual APK is version 1.4.1 / code 8; v1/v2/v3 signatures verified with
+  certificate `749cb6ed850f0ac415ffd34d4fdee7ced400730619344cc6ba9134168e8fd7e4`,
+  matching the previously delivered local 1.4.0 test APK.
+- Address selection, disconnected-state copying and the in-app HA tutorial were
+  reviewed against the API 19 boundary. Both READMEs document installation from
+  the current development branch, HA OS/Container setup and recording playback.
+
+Interface labels are name-based hints, not a measured connectivity result. The
+selector only changes displayed/copied URLs; it does not change routing or DHCP.
+Device UI rendering, actual interface names, HA installation and playback still
+require verification on the intended phone and HA instance. Existing signature
+and recording-preservation cautions below continue to apply.
+
+# Previous validation — Afterglow 1.4.0
 
 Checked on 2026-10-21 with JDK17, Android SDK Platform/Build-Tools36, Gradle8.13 and Python3.12.
 

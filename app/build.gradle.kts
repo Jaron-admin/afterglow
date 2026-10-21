@@ -10,8 +10,8 @@ android {
         applicationId = "com.oldphone.ipcam"
         minSdk = 19          // Android 4.4 KitKat
         targetSdk = 33
-        versionCode = 7
-        versionName = "1.4.0"
+        versionCode = 8
+        versionName = "1.4.1"
     }
 
     buildTypes {

@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -71,6 +72,11 @@ public final class MainActivity extends Activity {
     private TextView tvSnapshot;
     private TextView tvHttp;
     private TextView tvHaInfo;
+    private TextView btnAddress;
+    private TextView tvAddressHint;
+    private List<NetUtils.Address> currentAddresses = new ArrayList<NetUtils.Address>();
+    private NetUtils.Address displayedAddress;
+    private String selectedAddressKey;
     private Button btnToggle;
     private TextView tvRecordingStatus;
     private TextView tvLastEvent;
@@ -425,6 +431,8 @@ public final class MainActivity extends Activity {
         rowHttp = findViewById(R.id.rowHttp);
         tvHttp = (TextView) findViewById(R.id.tvHttp);
         tvHaInfo = (TextView) findViewById(R.id.tvHaInfo);
+        btnAddress = (TextView) findViewById(R.id.btnAddress);
+        tvAddressHint = (TextView) findViewById(R.id.tvAddressHint);
 
         ivPreview = (CropPreviewView) findViewById(R.id.ivPreview);
         flPreview = findViewById(R.id.flPreview);
@@ -1054,8 +1062,17 @@ public final class MainActivity extends Activity {
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle(R.string.help_title)
                         .setMessage(R.string.help_body)
+                        .setNeutralButton(R.string.ha_setup_title, new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) { showHaSetup(); }
+                        })
                         .setPositiveButton(android.R.string.ok, null).show();
             }
+        });
+        btnAddress.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showAddressPicker(); }
+        });
+        findViewById(R.id.btnHaSetup).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showHaSetup(); }
         });
 
         View.OnClickListener copyRtsp = new View.OnClickListener() {
@@ -1476,42 +1493,133 @@ public final class MainActivity extends Activity {
     private void refreshAddresses() {
         boolean rtsp = Prefs.needRtsp(), mjpeg = Prefs.needMjpeg();
         boolean network = rtsp || mjpeg;
-        String ip = network ? NetUtils.localIp() : "";
-        rowHttp.setEnabled(network);
-        rowHttp.setAlpha(network ? 1f : 0.5f);
-        tvHttp.setText(network ? String.format(Locale.US, "http://%s:%d/", ip,
-                CameraStreamService.HTTP_PORT) : getString(R.string.address_disabled));
+        currentAddresses = network ? NetUtils.localAddresses() : new ArrayList<NetUtils.Address>();
+        displayedAddress = null;
+        for (NetUtils.Address address : currentAddresses) {
+            if (addressKey(address).equals(selectedAddressKey)) {
+                displayedAddress = address;
+                break;
+            }
+        }
+        if (displayedAddress == null && !currentAddresses.isEmpty()) {
+            // An unavailable explicit choice falls back to the preferred live interface.
+            // Automatic selection remains automatic when a LAN interface later appears.
+            selectedAddressKey = null;
+            displayedAddress = currentAddresses.get(0);
+        }
+        boolean available = network && displayedAddress != null;
+        String ip = available ? displayedAddress.ip : "";
+        String unavailable = getString(network ? R.string.address_unavailable : R.string.address_disabled);
+        btnAddress.setEnabled(available);
+        btnAddress.setAlpha(available ? 1f : 0.5f);
+        btnAddress.setText(available ? getString(R.string.address_choice,
+                addressLabel(displayedAddress), currentAddresses.size()) : unavailable);
+        tvAddressHint.setText(!network ? R.string.ha_local_only
+                : !available ? R.string.address_no_ipv4
+                : displayedAddress.kind == NetUtils.VPN ? R.string.address_hint_vpn
+                : displayedAddress.kind == NetUtils.MOBILE ? R.string.address_hint_mobile
+                : R.string.address_hint_lan);
+        rowHttp.setEnabled(available);
+        rowHttp.setAlpha(available ? 1f : 0.5f);
+        tvHttp.setText(available ? String.format(Locale.US, "http://%s:%d/", ip,
+                CameraStreamService.HTTP_PORT) : unavailable);
         if (network) {
             String name;
             try { name = Prefs.deviceName(); }
-            catch (IllegalStateException unavailable) { name = getString(R.string.ha_identity_unavailable); }
+            catch (IllegalStateException identityUnavailable) { name = getString(R.string.ha_identity_unavailable); }
             tvHaInfo.setText(getString(R.string.ha_setup_hint, name));
         } else {
             tvHaInfo.setText(R.string.ha_local_only);
         }
-        rowRtsp.setEnabled(rtsp);
-        rowMjpeg.setEnabled(mjpeg);
-        rowSnapshot.setEnabled(mjpeg);
-        rowRtsp.setAlpha(rtsp ? 1f : 0.5f);
-        rowMjpeg.setAlpha(mjpeg ? 1f : 0.5f);
-        rowSnapshot.setAlpha(mjpeg ? 1f : 0.5f);
+        rowRtsp.setEnabled(rtsp && available);
+        rowMjpeg.setEnabled(mjpeg && available);
+        rowSnapshot.setEnabled(mjpeg && available);
+        rowRtsp.setAlpha(rtsp && available ? 1f : 0.5f);
+        rowMjpeg.setAlpha(mjpeg && available ? 1f : 0.5f);
+        rowSnapshot.setAlpha(mjpeg && available ? 1f : 0.5f);
 
-        if (!rtsp) {
-            tvRtsp.setText(getString(R.string.address_disabled));
+        if (!rtsp || !available) {
+            tvRtsp.setText(rtsp ? unavailable : getString(R.string.address_disabled));
         } else {
             tvRtsp.setText(String.format(Locale.US, "rtsp://%s:%d/live", ip,
                     CameraStreamService.RTSP_PORT));
         }
 
-        if (!mjpeg) {
-            tvMjpeg.setText(getString(R.string.address_disabled));
-            tvSnapshot.setText(getString(R.string.address_disabled));
+        if (!mjpeg || !available) {
+            tvMjpeg.setText(mjpeg ? unavailable : getString(R.string.address_disabled));
+            tvSnapshot.setText(mjpeg ? unavailable : getString(R.string.address_disabled));
         } else {
             tvMjpeg.setText(String.format(Locale.US, "http://%s:%d/video", ip,
                     CameraStreamService.HTTP_PORT));
             tvSnapshot.setText(String.format(Locale.US, "http://%s:%d/snapshot.jpg", ip,
                     CameraStreamService.HTTP_PORT));
         }
+    }
+
+    private static String addressKey(NetUtils.Address address) {
+        return address.interfaceName + "/" + address.ip;
+    }
+
+    private String addressLabel(NetUtils.Address address) {
+        int kind;
+        switch (address.kind) {
+            case NetUtils.WIFI: kind = R.string.network_wifi; break;
+            case NetUtils.ETHERNET: kind = R.string.network_ethernet; break;
+            case NetUtils.HOTSPOT: kind = R.string.network_hotspot; break;
+            case NetUtils.USB: kind = R.string.network_usb; break;
+            case NetUtils.VPN: kind = R.string.network_vpn; break;
+            case NetUtils.MOBILE: kind = R.string.network_mobile; break;
+            default: kind = R.string.network_other;
+        }
+        return getString(R.string.address_label, getString(kind), address.interfaceName, address.ip);
+    }
+
+    private void showAddressPicker() {
+        refreshAddresses();
+        if (currentAddresses.isEmpty()) return;
+        final List<NetUtils.Address> choices = new ArrayList<NetUtils.Address>(currentAddresses);
+        String[] labels = new String[choices.size()];
+        for (int i = 0; i < choices.size(); i++) labels[i] = addressLabel(choices.get(i));
+        new AlertDialog.Builder(this).setTitle(R.string.address_select_title)
+                .setSingleChoiceItems(labels, choices.indexOf(displayedAddress),
+                        new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                selectedAddressKey = addressKey(choices.get(which));
+                                refreshAddresses();
+                                dialog.dismiss();
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void showHaSetup() {
+        refreshAddresses();
+        final String http = rowHttp.isEnabled() ? tvHttp.getText().toString() : null;
+        AlertDialog.Builder guide = new AlertDialog.Builder(this)
+                .setTitle(R.string.ha_setup_title)
+                .setMessage(getString(R.string.ha_setup_steps,
+                        http == null ? getString(R.string.ha_address_not_ready) : http))
+                .setPositiveButton(android.R.string.ok, null)
+                .setNegativeButton(R.string.ha_online_guide, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW,
+                                    Uri.parse(getString(R.string.ha_guide_url))));
+                        } catch (android.content.ActivityNotFoundException unavailable) {
+                            Toast.makeText(MainActivity.this, R.string.browser_unavailable,
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+        if (http != null) {
+            guide.setNeutralButton(R.string.copy_http_address, new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface dialog, int which) {
+                    refreshAddresses();
+                    if (rowHttp.isEnabled()) copy(tvHttp.getText().toString());
+                }
+            });
+        }
+        guide.show();
     }
 
     /** Render the current viewport, including both panes, without relaying out live views. */

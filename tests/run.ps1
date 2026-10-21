@@ -6,6 +6,8 @@ $ErrorActionPreference = 'Stop'
 if (!$JavaHome) { throw 'Set JAVA_HOME or pass -JavaHome with a JDK 17 directory.' }
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    & "$PSScriptRoot\network-addresses\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Network address tests failed.' }
     & "$PSScriptRoot\performance\run.ps1" -JavaHome $JavaHome
     if ($LASTEXITCODE -ne 0) { throw 'Frame pacing tests failed.' }
     & "$PSScriptRoot\discovery\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar

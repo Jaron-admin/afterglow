@@ -505,6 +505,27 @@
                                 android:layout_height="wrap_content"
                                 android:text="@string/section_address_hint" />
                         </LinearLayout>
+                        <TextView
+                            android:id="@+id/btnAddress"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:gravity="center_vertical"
+                            android:text="@string/address_select_title"
+                            android:textColor="@color/primary"
+                            android:textSize="13sp"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true" />
+                        <TextView
+                            android:id="@+id/tvAddressHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="6dp"
+                            android:textColor="@color/on_surface_variant"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
                         <LinearLayout
                             android:id="@+id/rowHttp"
                             android:layout_width="match_parent"
@@ -608,6 +629,17 @@
                             android:layout_marginTop="8dp"
                             android:textColor="@color/on_surface_variant"
                             android:textSize="12sp" />
+                        <TextView
+                            android:id="@+id/btnHaSetup"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:gravity="center_vertical"
+                            android:text="@string/ha_setup_title"
+                            android:textColor="@color/primary"
+                            android:textSize="14sp"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true" />
                     </LinearLayout>
                     <LinearLayout
                         style="@style/Card">
