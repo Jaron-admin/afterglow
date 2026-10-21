@@ -18,6 +18,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -1054,6 +1056,9 @@ public final class MainActivity extends Activity {
             }
         };
         etPass.setOnEditorActionListener(authDone);
+        findViewById(R.id.btnKeepAlive).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showKeepAliveDialog(); }
+        });
         findViewById(R.id.btnHelp).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -1576,6 +1581,49 @@ public final class MainActivity extends Activity {
                             }
                         })
                 .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void showKeepAliveDialog() {
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        boolean ignored = Build.VERSION.SDK_INT < 23
+                || (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
+        String status = getString(ignored
+                ? R.string.keep_alive_ignored : R.string.keep_alive_optimized);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.keep_alive_title)
+                .setMessage(getString(R.string.keep_alive_body, status))
+                .setPositiveButton(R.string.keep_alive_battery, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        requestIgnoreBatteryOptimizations();
+                    }
+                })
+                .setNeutralButton(R.string.keep_alive_app_settings, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        openAppSettings();
+                    }
+                })
+                .setNegativeButton(R.string.keep_alive_close, null)
+                .show();
+    }
+
+    private void requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT >= 23) {
+            try {
+                startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + getPackageName())));
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+        openAppSettings();
+    }
+
+    private void openAppSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (Throwable ignored) {
+        }
     }
 
     private void showHaSetup() {

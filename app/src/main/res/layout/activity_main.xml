@@ -197,6 +197,20 @@
                         android:textColor="@color/on_surface_variant"
                         android:textSize="12sp"
                         android:text="@string/detail_idle" />
+                    <TextView
+                        android:id="@+id/btnKeepAlive"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:minHeight="44dp"
+                        android:padding="8dp"
+                        android:text="@string/keep_alive"
+                        android:textColor="@color/on_surface_variant"
+                        android:textSize="12sp" />
                     <LinearLayout
                         style="@style/Card">
                         <TextView

@@ -1,91 +1,115 @@
-# 版本记录
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">余光</string>
+    <string name="app_subtitle">Afterglow</string>
 
-日常使用见[项目首页](../README.md)，构建和验收见[开发说明](development.md)。
+    <string name="status_stopped">未开启</string>
+    <string name="status_running">运行中</string>
+    <string name="btn_start">开始</string>
+    <string name="btn_stop">停止</string>
 
-## 1.4.3 的改动
+    <string name="preview_title">实时预览</string>
+    <string name="preview_idle">余光，等待开启</string>
+    <string name="preview_idle_hint"></string>
+    <string name="preview_waiting">正在连接画面…</string>
+    <string name="preview_waiting_hint"></string>
+    <string name="detail_idle">准备就绪</string>
 
-- 修复 Home Assistant 播放 RTSP 时报 No dts in 7 consecutive packets / Error demuxing stream：所有 Android 版本关闭 H.264 B 帧，旧设备（API 28）不再输出乱序时间戳。
-- RTSP 发送队列从 120 帧降到 8 帧，慢客户端不再累积数秒延迟；编码器增加实时优先级。
-- 新增录像分辨率设置：推流（MJPEG/预览）保持主页低分辨率，H.264 录像可单独选 640×360 / 960×540 / 1280×720；单个编码器，采集按两者较大尺寸运行。
-- Windows 构建脚本按 UTF-8 读取 AndroidManifest，修复中文资源导致的构建失败。
-- 注意：本版 APK 使用新的调试签名，从 1.4.2 覆盖安装会提示签名不一致；需要卸载旧版后安装（会清除应用内设置与录像）。
+    <string name="section_address">访问地址</string>
+    <string name="section_address_hint">点按复制</string>
+    <string name="section_devices">附近设备</string>
+    <string name="section_devices_hint"></string>
+    <string name="devices_scanning">正在查找 %1$s…</string>
+    <string name="devices_found">发现 %1$d 台设备</string>
+    <string name="devices_none">暂无设备</string>
+    <string name="devices_none_hint"></string>
+    <string name="btn_rescan">刷新</string>
+    <string name="device_view">查看</string>
+    <string name="viewer_close">关闭</string>
+    <string name="viewer_connecting">正在连接…</string>
+    <string name="viewer_reconnecting">正在重连…（%1$d/%2$d）</string>
+    <string name="viewer_failed">连接失败\n%1$s\n请确认对方仍在推流，且与本机在同一网段</string>
+    <string name="section_settings">画质与输出</string>
+    <string name="section_settings_hint">自动应用</string>
+    <string name="section_advanced">高级</string>
 
-## 1.4.2 的改动
+    <string name="addr_rtsp">RTSP</string>
+    <string name="addr_mjpeg">MJPEG</string>
+    <string name="addr_snapshot">快照</string>
 
-- App 与 README 的 HA 教程统一为四步 Generic Camera 接入，默认只配置实时画面。
-- 精简访问地址卡片，移除地址解释文案，保留地址选择和复制。
-- 录像浏览和按设备身份更新地址保留在可选的 HACS 专用集成中。
-- 专用集成调整为 HACS 支持的目录布局；手工安装与维护说明移到开发文档。
+    <string name="label_camera">摄像头</string>
+    <string name="label_rotation">旋转</string>
+    <string name="label_resolution">输出分辨率</string>
+    <string name="label_output_layout">输出方向</string>
+    <string name="label_aspect_ratio">画面比例</string>
+    <string name="camera_auto">自动选择镜头</string>
+    <string name="camera_catalog_waiting">正在读取镜头信息，请稍后校准</string>
+    <string name="camera_front_legacy">前置（自动选择）</string>
+    <string name="camera_back_legacy">后置（自动选择）</string>
+    <string name="camera_unavailable">%1$s（暂不可用）</string>
+    <string name="lock_orientation">锁定当前方向</string>
+    <string name="calibrate_camera">校准摄像头</string>
+    <string name="calibration_reset">恢复自动</string>
+    <string name="orientation_apply_failed">方向设置未应用：%1$s</string>
+    <string name="output_width">输出宽度</string>
+    <string name="output_height">输出高度</string>
+    <string name="apply_output_size">应用</string>
+    <string name="output_dimension_invalid">请输入 16–4096 之间的偶数</string>
+    <string name="output_pixel_limit">总像素不能超过 8294400</string>
+    <string name="output_size_hint">亮区推流，暗区裁掉。输出尺寸不随手机旋转。</string>
+    <string name="geometry_live">取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d</string>
+    <string name="geometry_available">可用取景 %1$d×%2$d · %3$d:%4$d\n推流 %5$d×%6$d · 实际取景以开启后为准</string>
+    <string name="geometry_unknown">开启后显示完整输入尺寸与比例\n最终输出 %1$d×%2$d</string>
+    <string-array name="output_layouts"><item>横屏</item><item>竖屏</item><item>自定义</item></string-array>
+    <string-array name="camera_calibration_offsets"><item>自动校正 · 偏移 0°</item><item>手动偏移 90°</item><item>手动偏移 180°</item><item>手动偏移 270°</item></string-array>
+    <string name="label_fps">帧率</string>
+    <string name="label_bitrate">码率</string>
+    <string name="label_mode">输出模式</string>
+    <string name="label_boot">开机自动启动</string>
+    <string name="label_auth">访问验证（HTTP）</string>
 
-## 1.4.1 的改动
+    <string name="hint_user">用户名</string>
+    <string name="hint_pass">密码</string>
 
-- 增加「选择访问地址」，展示系统当前可见的 IPv4 地址及接口线索，方便复制 HA 能访问的局域网或 VPN 地址。
-- 地址卡片新增「接入 HA 教程」，离线说明安装集成、添加设备、查看录像和远程访问。
-- README 补齐 HA OS / Container 安装步骤、目录结构、常见问题，并解释 `10.x` 地址及设备身份与固定 IP 的区别。
+    <string name="tip">手机需与 Home Assistant 处于同一局域网。建议屏幕亮度调到最低并保持充电，长期满电静置容易让老电池鼓包；部分机型需在「设置-电池」中允许本应用后台运行，否则长时间推流会被系统杀掉。</string>
 
-## 1.4.0 的改动
-
-- 修复帧间隔轻微抖动导致误丢帧的问题，移除本机预览8 fps、MJPEG12 fps的隐藏上限；实际帧率仍取决于设备与网络吞吐。
-- 本机预览使用长边不超过960像素的复用缓冲区，保留完整视野和裁剪遮罩，并在后台处理JPEG，减少对采集、推流的干扰。远端和录像保留选定分辨率、码率。
-- 新增专用 Home Assistant 自定义集成，提供实时摄像头和手机录像的浏览、播放、拖动进度。
-- 保存固定设备身份并广播 DNS-SD；同一局域网内 HA 能按身份更新变化的 IP。数字 IP 本身仍由路由器分配。
-- 录像通过 HA 认证代理读取，沿用现有 Tailscale 即可远程访问，无需直接开放手机端口。
-- RTSP-only 也提供身份/录像 HTTP 接口；「仅本地录像」继续不开放网络服务。只公开当前存储中已完成、已登记的录像，不提供远程删除。
-- 安装和限制见 [HA 开发说明](home-assistant-development.md)。实际手机、HA 和 VPN 环境仍需验收。
-
-## 1.3.1 的改动
-
-- 修复 RTSP 开始播放确认与首帧入队之间的竞态，补充确定性回归测试。
-
-## 1.3.0 的改动
-
-- 手机和系统开放的外置 SD 卡应用目录录像，支持连续与事件模式、本地回放、导出、锁定和删除。
-- 连续录像默认每段 5 分钟；可自定义 10–3600 秒分段、16–2048 MiB 单段上限、1–1024 GiB 总容量、
-  最低剩余空间、保留天数，以及空间不足时循环覆盖或停止。锁定片段不参加自动清理。
-- 事件录像默认预录约 5 秒、最后触发后延录 15 秒，可分别设置 0–30 秒和 1–600 秒。
-  预录受关键帧及 8 MiB 内存上限约束；高码率时实际预录会缩短。重复事件合并，长事件自动分段。
-- 麦克风默认关闭，启用后提供 AAC-LC 单声道音轨；支持有声 RTSP、可选有声 MP4 和离线声响触发。
-- 离线画面变化和声响检测可分别启用，提供灵敏度；本版不识别人、宠物或声音类别。
-- 慢盘、满盘或 SD 卡移除会明确暂停录像，保留推流；麦克风采集故障会结束请求的音视频会话并提示原因。
-
-**存储规则：**录像位于应用专属目录，卸载应用会删除；重要片段请导出到系统文件选择器指定的位置。
-循环模式仅清理选定目标内本应用登记、已完成、未锁定的片段；停止模式不执行自动清理，
-保留天数也只在循环模式生效。写入失败不会自动切换存储；恢复存储后保存设置或重启采集可重试。
-断电可能损失正在写的片段，异常残留不会显示为已完成录像。
-
-录像与推流共用主页的分辨率、裁剪、帧率和码率。时长到达后在下一关键帧切段；
-单文件大小接近上限时提前寻找关键帧分段，未能及时获得关键帧会暂停录像。
-修改录像配置、音轨或镜头会结束当前片段并短暂重启采集。
-
-## 1.2.1 的改动
-
-- 横屏左侧预览、右侧设置，旋转时重排原控件，保留编辑状态。
-- 输出先选方向和比例，再在该比例内选择具体分辨率；常用比例包含 16:9、4:3、1:1，镜头及已保存尺寸的其他比例也会列出。
-- 默认推流为 16:9，保留完整输入预览和半透明遮罩，移除裁剪黄框。
-- 比例与源尺寸独立：例如 4:3 输入也可裁剪生成 16:9 输出；宽屏比例本身不会增加视野。
-
-## 1.2.0 的改动
-
-- 自动方向校正独立于界面，前后镜头分别计算；支持四向界面、方向锁定和每镜头校准。
-- 横屏 / 竖屏 / 自定义输出尺寸，旋转手机不会交换所选输出宽高。
-- 完整输入预览与实际推流共享同一份裁剪几何，遮罩覆盖的像素不会进入 RTSP、MJPEG 或快照。
-- Android 5+ 增加 Camera2 采集和可访问的多镜头列表；支持指定可用的逻辑相机成员，Android 4.4 保留旧采集接口。
-- 分辨率列表结合当前镜头能力，实际采集尽量采用接近传感器原始比例的流尺寸，再中心裁剪、缩放到输出尺寸。输入尺寸、完整画面比例和输出尺寸分别显示。
-
-镜头能否使用取决于系统和厂商开放的接口；软件无法访问未开放的镜头。
-「完整画面」指当前采集流尚未经过本应用裁剪的范围，并不保证包含传感器每个物理像素。
-源尺寸不足时可能放大，增加输出像素不会增加实际细节。
-自定义宽高必须为 16–4096 的偶数，总像素不超过 8,294,400；H.264 还需设备编码器支持该尺寸和帧率。
-编码失败会显示明确错误，不会偷偷改尺寸或丢掉 RTSP 输出。
-
-从 1.1.0 升级会保留原输出尺寸等配置，但旧的绝对旋转角不作为新自动校正偏移沿用，避免叠加旋转；必要时可重新校准。
-
-## 1.1.0 的改动
-
-- 余光 / Afterglow 名称、深色界面、暖色几何镜头图标，含 Android 8+ 自适应图标。
-- 摄像头和旋转控制靠近预览；精简重复说明，画质参数紧凑排列。
-- 设置自动生效，合并连续操作；预览丢弃旧会话的迟到画面。
-- 启动、停止、重配串行执行，失败时释放已创建的摄像头、编码器、服务器和唤醒锁。
-- 网页重连与会话检测；修正 MJPEG 分段边界及断连后的客户端清理。
-- 修正 Android 4.4 的 H.264 编码器枚举路径，补充生命周期与真实网络协议回归测试。
-
+    <string name="copied">已复制到剪贴板</string>
+    <string name="status_switching">正在切换…</string>
+    <string name="address_disabled">未启用</string>
+    <string name="address_unavailable">暂无可用地址</string>
+    <string name="address_select_title">选择访问地址</string>
+    <string name="address_choice">选择访问地址 · 共 %2$d 个\n%1$s ▾</string>
+    <string name="address_label">%1$s（%2$s）\n%3$s</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_ethernet">有线网络</string>
+    <string name="network_hotspot">热点</string>
+    <string name="network_usb">USB 网络</string>
+    <string name="network_vpn">VPN / 隧道</string>
+    <string name="network_mobile">移动网络</string>
+    <string name="network_other">其他网卡</string>
+    <string name="addr_http">HTTP</string>
+    <string name="viewer_http_auth_title">此设备需要 HTTP 验证</string>
+    <string name="viewer_http_auth_hint">手机内的预览暂不支持输入 HTTP 用户名和密码。可在浏览器打开 HTTP 地址后登录，或在 Home Assistant 中配置访问凭据。</string>
+    <string name="copy_http_address">复制 HTTP 地址</string>
+    <string name="ha_setup_title">接入 Home Assistant</string>
+    <string name="ha_online_guide">在线教程</string>
+    <string name="ha_address_not_ready">请先连接 Wi-Fi，并选择 RTSP + MJPEG。</string>
+    <string name="browser_unavailable">未找到浏览器，请在项目 README 查看教程。</string>
+    <string name="ha_guide_url" translatable="false">https://github.com/Jaron-admin/afterglow/blob/main/homeassistant/README.md</string>
+    <string name="ha_setup_steps">使用 HA 自带的 Generic Camera（通用摄像头）即可看实时画面。\n\n1. 准备手机\n手机和 HA 连到同一局域网。在余光选择 RTSP + MJPEG，点击“开始”。\n\n2. 添加摄像头\n在 HA 打开“设置 → 设备与服务 → 添加集成”，搜索 Generic Camera（通用摄像头）。\n\n3. 填写地址\n把 JPEG 快照填入 Still Image URL（静态图像 URL）：\n%1$s\n\n把 RTSP 填入 Stream Source（流来源）：\n%2$s\n\n手机开启“访问验证（HTTP）”时，填写相同用户名、密码，认证选 Basic；未开启则留空。RTSP 传输保持 TCP。下方按钮可分别复制两条地址。\n\n4. 查看画面\n保存并按提示完成配置，打开新增摄像头查看实时画面，再按需添加到仪表盘。\n\n此方式用于实时画面。浏览手机录像请看“进阶”。\n\n常见问题\n• 连不上？确认手机已点“开始”、模式为 RTSP + MJPEG，HA 能访问所选地址；10.x.x.x 也可以是正常内网地址。开启访问验证时核对用户名、密码和 Basic 认证。\n• 黑屏或卡顿？核对两条地址没有填反，RTSP 传输为 TCP，并打开实时画面。改善 Wi-Fi 信号；旧手机可先降低分辨率再比较。\n• 手机 IP 变了？在 Generic Camera 的配置中更新两条地址；也可在路由器为手机保留地址，减少变动。</string>
+    <string name="ha_copy_rtsp">复制 RTSP</string>
+    <string name="ha_copy_snapshot">复制快照</string>
+    <string name="ha_advanced_title">进阶</string>
+    <string name="ha_advanced_steps">需要在 HA 浏览手机录像时，可通过 HACS 安装 Afterglow。尚未安装 HACS，请先按“在线教程”中的官方指南安装与配置。\n\n在 HACS 右上角菜单打开“自定义仓库”，填入下面的网址，类别选 Integration（集成）：\nhttps://github.com/Jaron-admin/afterglow\n\n添加后打开 Afterglow，点击 Download（下载）。完整重启 HA，再到“设置 → 设备与服务 → 添加集成 → Afterglow”，选择发现的设备或填写手机 HTTP 地址：\n%1$s\n\n开启访问验证时，填写手机上相同的用户名和密码。原来的 Generic Camera 不会自动转换。\n\n在“媒体 → Afterglow → 设备”中播放已完成的录像并拖动进度。只显示当前所选存储中的片段；浏览时保持手机在网络模式下采集。\n\n专用集成可在收到局域网发现信息时跟随手机 IP 变化。外出时继续通过现有 Tailscale 打开家里的 HA，由 HA 连接余光手机。</string>
+    <string name="help_title">帮助</string>
+    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="auth_username_required">用户名不能为空</string>
+    <string name="keep_alive">保活设置 · 避免锁屏断流</string>
+    <string name="keep_alive_title">锁屏保活</string>
+    <string name="keep_alive_body">锁屏后系统可能冻结余光或休眠 Wi-Fi，表现为 HA 画面停住、解锁后恢复。\n\n1. 点“忽略电池优化”，允许余光在后台运行。\n2. 魅族 / Flyme：设置 → 电池 → 应用耗电管理 → 余光 → 允许后台运行（无限制）；权限管理 → 自启动 → 允许。\n3. 最近任务里锁定余光，避免一键清理。\n4. 仍断流时，可让旧手机保持充电和屏幕常亮。\n\n当前电池优化状态：%1$s</string>
+    <string name="keep_alive_battery">忽略电池优化</string>
+    <string name="keep_alive_app_settings">应用设置</string>
+    <string name="keep_alive_close">关闭</string>
+    <string name="keep_alive_ignored">已忽略电池优化</string>
+    <string name="keep_alive_optimized">未忽略（可能被系统冻结）</string>
+</resources>

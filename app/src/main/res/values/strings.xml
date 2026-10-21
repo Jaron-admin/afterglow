@@ -104,4 +104,12 @@
     <string name="help_title">帮助</string>
     <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
+    <string name="keep_alive">保活设置 · 避免锁屏断流</string>
+    <string name="keep_alive_title">锁屏保活</string>
+    <string name="keep_alive_body">锁屏后系统可能冻结余光或休眠 Wi-Fi，表现为 HA 画面停住、解锁后恢复。\n\n1. 点“忽略电池优化”，允许余光在后台运行。\n2. 魅族 / Flyme：设置 → 电池 → 应用耗电管理 → 余光 → 允许后台运行（无限制）；权限管理 → 自启动 → 允许。\n3. 最近任务里锁定余光，避免一键清理。\n4. 仍断流时，可让旧手机保持充电和屏幕常亮。\n\n当前电池优化状态：%1$s</string>
+    <string name="keep_alive_battery">忽略电池优化</string>
+    <string name="keep_alive_app_settings">应用设置</string>
+    <string name="keep_alive_close">关闭</string>
+    <string name="keep_alive_ignored">已忽略电池优化</string>
+    <string name="keep_alive_optimized">未忽略（可能被系统冻结）</string>
 </resources>

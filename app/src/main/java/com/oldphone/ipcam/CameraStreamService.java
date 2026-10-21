@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
+import android.net.wifi.WifiManager;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
@@ -97,6 +98,7 @@ public final class CameraStreamService extends Service {
     private MotionDetector motionDetector;
     private int detectionSensitivity;
     private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
 
     private int outputWidth;
     private int outputHeight;
@@ -253,6 +255,24 @@ public final class CameraStreamService extends Service {
         });
         stopForeground(true);
         super.onDestroy();
+    }
+
+    /**
+     * Swiping the task away must not silence a camera that is still expected to stream.
+     * START_STICKY alone is not enough on OEM ROMs that treat the swipe as a stop.
+     */
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        if (running) {
+            try {
+                Intent restart = new Intent(getApplicationContext(), CameraStreamService.class)
+                        .setAction(ACTION_START);
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(restart);
+                else startService(restart);
+            } catch (Throwable failure) {
+                Log.w(TAG, "restart after task removal: " + failure);
+            }
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     private void refreshOrientationSettings() {
@@ -684,11 +704,24 @@ public final class CameraStreamService extends Service {
                 wakeLock.acquire();
             }
         } catch (Throwable failure) { Log.w(TAG, "wakelock: " + failure); }
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "afterglow:wifi");
+                wifiLock.setReferenceCounted(false);
+                wifiLock.acquire();
+            }
+        } catch (Throwable failure) { Log.w(TAG, "wifilock: " + failure); }
     }
 
     private void releaseWakeLock() {
         try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); }
         catch (Throwable ignored) { }
         wakeLock = null;
+        try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); }
+        catch (Throwable ignored) { }
+        wifiLock = null;
     }
 }
