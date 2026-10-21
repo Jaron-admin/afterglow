@@ -286,8 +286,11 @@ public final class RecordingSettingsActivity extends Activity {
         boolean mic = Prefs.microphoneEnabled();
         boolean soundOn = RecordingAudio.soundControlsEnabled(mic);
         sound.setEnabled(soundOn);
+        sound.setAlpha(soundOn ? 1f : 0.38f);
         sound.setTextColor(color(soundOn ? R.color.on_surface : R.color.on_surface_disabled));
-        soundSensitivity.setEnabled(RecordingAudio.soundSensitivityEnabled(mic, sound.isChecked()));
+        boolean level = RecordingAudio.soundSensitivityEnabled(mic, sound.isChecked());
+        soundSensitivity.setEnabled(level);
+        soundSensitivity.setAlpha(level ? 1f : 0.38f);
         String note = RecordingAudio.soundDisabledNote(mic);
         soundNote.setText(note);
         soundNote.setVisibility(note.length() == 0 ? View.GONE : View.VISIBLE);

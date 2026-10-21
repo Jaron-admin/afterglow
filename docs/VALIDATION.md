@@ -1,3 +1,11 @@
+# Validation — shorter home screen and one sound switch
+
+Checked on 2026-10-21 with JDK 17. The JVM suites in `tests/run.ps1` passed, including `RecordingAudioTest` (one microphone switch, the silent-file upgrade, and the disabled sound trigger). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors and 129 warnings.
+
+Home now shows the preview, 「录制声音」, status, the camera, and three entry cards. Quality, output, addresses and keep-alive are on 「画面与推流」. 「锁定当前方向」 is a switch and still uses `direction_lock`. The file-audio checkbox is gone. `recording_audio` is still read and is rewritten only when the user moves 「录制声音」, so an older silent recording stays silent until that gesture.
+
+The new screenshots are the same Robolectric 4.17 native + Roborazzi path: main, 画面与推流, and recording settings, light and dark.
+
 # Validation — recording list, settings and color
 
 Checked on 2026-10-21 with JDK 17. The same JVM suites as `tests/run.ps1` passed, including `RecordingLibraryTest` (reason chips, day folders, export file names). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors.
