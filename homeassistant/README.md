@@ -1,34 +1,41 @@
 # 余光 · Afterglow 接入 Home Assistant
 
-先在手机启动推流，确认 Home Assistant 与手机可以互相访问。下面的 `192.168.1.50` 是示例地址，请替换为应用显示的手机 IP。
+适用于 Afterglow 1.4.2。手机中的「接入 HA 教程」也可离线查看以下操作。
 
-## Generic Camera（RTSP）
+## 接入 Home Assistant：四步看实时画面
 
-按 [Home Assistant 官方 Generic Camera 文档](https://www.home-assistant.io/integrations/generic/)，在「设置 → 设备与服务 → 添加集成」中添加 Generic Camera，填写：
+使用 HA 自带的 **Generic Camera（通用摄像头）** 即可看实时画面。
 
-| 字段 | 值 |
+1. 手机和 HA 连到同一局域网。在余光选择 **RTSP + MJPEG**，点击「开始」。
+2. 在 HA 打开「设置 → 设备与服务 → 添加集成」，搜索 **Generic Camera（通用摄像头）**。
+3. 从手机「访问地址」复制 **JPEG 快照**与 **RTSP** 地址，分别粘贴到 **Still Image URL（静态图像 URL）** 和 **Stream Source（流来源）**。手机开启「访问验证（HTTP）」时，填写相同用户名、密码，认证选 **Basic**；未开启则留空。RTSP 传输保持 **TCP**。
+4. 保存并按提示完成配置，打开新增摄像头查看实时画面，再按需添加到仪表盘。
+
+地址格式如下，`手机IP` 用手机实际显示的地址替换；也可以直接复制手机上的完整地址：
+
+| HA 字段 | 地址 |
 | --- | --- |
-| Still Image URL | `http://192.168.1.50:8080/snapshot.jpg` |
-| Stream Source | `rtsp://192.168.1.50:8554/live` |
-| RTSP transport | `tcp` |
+| Still Image URL | `http://手机IP:8080/snapshot.jpg` |
+| Stream Source | `rtsp://手机IP:8554/live` |
 
-同时填写以上两个 URL 时，余光应选择 RTSP + MJPEG 输出模式。
-只开启 RTSP 时可仅填 Stream Source；Home Assistant 需要配置 stream 集成。
+字段说明可对照 [HA 官方 Generic Camera 指南](https://www.home-assistant.io/integrations/generic/)。此方式只看实时画面，不会显示手机录像库；需要录像浏览时再看下面的可选功能。
 
-## MJPEG IP Camera
+## 常见问题
 
-按 [Home Assistant 官方 MJPEG IP Camera 文档](https://www.home-assistant.io/integrations/mjpeg/)，添加 MJPEG IP Camera：
+**连不上？** 确认手机已点「开始」、模式为 RTSP + MJPEG，HA 能访问手机所选地址。`10.x.x.x` 也可以是正常的局域网地址；若开启了访问验证，核对用户名、密码和 Basic 认证。
 
-- MJPEG URL：`http://192.168.1.50:8080/video`
-- Still Image URL：`http://192.168.1.50:8080/snapshot.jpg`
-- 在余光启用 HTTP 访问验证后，填写对应用户名和密码。
+**黑屏或卡顿？** 核对两条地址没有填反，RTSP 传输为 TCP，并打开摄像头的实时画面。改善 Wi-Fi 信号；旧手机可先降低分辨率再比较。
 
-HTTP 验证不保护 RTSP。不要把应用端口直接暴露到公网。
+**手机 IP 变了怎么办？** 在 Generic Camera 的配置中更新两条地址；也可在路由器为手机保留地址，减少变动。
 
-## 方向与断连
+## 进阶可选：在 HA 浏览手机录像
 
-在余光预览旁调整方向会改变实际视频数据。90°/270°旋转同时交换输出宽高，观看端需要重新连接并读取新的流参数。
-手机 IP 变化时需更新集成地址；可以在路由器中为手机保留固定的 DHCP 地址。
-路由器的客户端隔离功能也可能阻止设备互访。
+需要录像浏览及自动跟随设备地址变化时，再通过 HACS 安装 **Afterglow**。尚未安装 HACS 的用户先按 [HACS 官方安装指南](https://www.hacs.xyz/docs/use/download/download/)完成安装与配置。
 
-配置方式参考官方文档，查阅日期：2026-10-20。该仓库的自动化测试不运行 Home Assistant。
+在 **HACS → 右上角菜单 → 自定义仓库**中填入 `https://github.com/Jaron-admin/afterglow`，类别选 **Integration（集成）**并添加。随后打开 Afterglow，点击 **Download（下载）**，完整重启 HA，再到「设置 → 设备与服务 → 添加集成 → Afterglow」配置手机。可选择发现的设备，或填写手机 HTTP 地址；开启访问验证时使用手机上的同一组凭据。这是 HACS 自定义仓库，需要先添加仓库。操作入口见 [HACS 官方说明](https://www.hacs.xyz/docs/faq/custom_repositories/)。
+
+安装后在「媒体 → Afterglow → 设备」播放录像、拖动进度。只显示手机当前所选存储中已完成的片段；浏览时保持手机在网络模式下采集。原来的 Generic Camera 不会自动转换为 Afterglow。
+
+外出时可继续通过现有 Tailscale 打开家里的 HA，由 HA 连接余光手机。
+
+手工部署、详细排障和技术限制见[开发与维护文档](../docs/home-assistant-development.md)。

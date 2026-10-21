@@ -6,7 +6,7 @@ public final class FrameGeometry {
     public final int cropLeft, cropTop, cropWidth, cropHeight, outputWidth, outputHeight;
     public final long revision;
     final int[] yColumns, yRows, uvColumns, uvRows;
-    private FrameGeometry(int w, int h, int r, int ow, int oh, long revision) {
+    private FrameGeometry(int w, int h, int r, int ow, int oh, long revision, boolean fullView) {
         checkSize(w, h);
         checkSize(ow, oh);
         if (r != 0 && r != 90 && r != 180 && r != 270)
@@ -15,7 +15,10 @@ public final class FrameGeometry {
         fullWidth = r % 180 == 0 ? w : h;
         fullHeight = r % 180 == 0 ? h : w;
         outputWidth = ow; outputHeight = oh; this.revision = revision;
-        if ((long) fullWidth * oh > (long) fullHeight * ow) {
+        if (fullView) {
+            cropWidth = fullWidth;
+            cropHeight = fullHeight;
+        } else if ((long) fullWidth * oh > (long) fullHeight * ow) {
             cropHeight = fullHeight;
             cropWidth = Math.max(2, ((int) ((long) fullHeight * ow / oh)) & ~1);
         } else {
@@ -32,7 +35,19 @@ public final class FrameGeometry {
         uvRows = rows(oh / 2, cropTop / 2, cropHeight / 2, w / 2, h / 2, 2);
     }
     public static FrameGeometry create(int w, int h, int r, int ow, int oh, long revision) {
-        return new FrameGeometry(w, h, r, ow, oh, revision);
+        return new FrameGeometry(w, h, r, ow, oh, revision, false);
+    }
+    /** Bounded local display buffer; rounding to even sizes must never crop the view. */
+    public static FrameGeometry preview(int w, int h, int r, int maxEdge, long revision) {
+        checkSize(w, h);
+        if (maxEdge < 2 || maxEdge > 4096) throw new IllegalArgumentException("Invalid preview bound");
+        int fullW = r % 180 == 0 ? w : h;
+        int fullH = r % 180 == 0 ? h : w;
+        int longest = Math.max(fullW, fullH);
+        int edge = Math.min(longest, maxEdge & ~1);
+        int ow = Math.max(2, (int) ((long) fullW * edge / longest) & ~1);
+        int oh = Math.max(2, (int) ((long) fullH * edge / longest) & ~1);
+        return new FrameGeometry(w, h, r, ow, oh, revision, true);
     }
     /** O is the clockwise physical device angle reported by OrientationEventListener. */
     public static int rotation(int sensor, boolean front, int device, int calibration) {

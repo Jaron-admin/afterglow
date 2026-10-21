@@ -17,10 +17,21 @@ public final class JpegFrameDecoder {
     private int index;
 
     public Bitmap decode(byte[] jpeg) {
-        if (jpeg == null || jpeg.length == 0) {
+        return decode(jpeg, jpeg == null ? 0 : jpeg.length);
+    }
+
+    /** Decode a populated prefix of a reusable JPEG buffer. */
+    public Bitmap decode(byte[] jpeg, int length) {
+        return decode(jpeg, length, null);
+    }
+
+    /** Local preview may discard decoded frames; never reuse the bitmap still on screen. */
+    Bitmap decode(byte[] jpeg, int length, Bitmap displayed) {
+        if (jpeg == null || length <= 0 || length > jpeg.length) {
             return null;
         }
         int next = (index + 1) % slots.length;
+        if (displayed != null && slots[next] == displayed) next = index;
         Bitmap target = slots[next];
 
         BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -32,11 +43,11 @@ public final class JpegFrameDecoder {
 
         Bitmap bmp;
         try {
-            bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, opts);
+            bmp = BitmapFactory.decodeByteArray(jpeg, 0, length, opts);
         } catch (Throwable t) {
             // 尺寸/格式不匹配时 inBitmap 会抛异常，退回普通解码
             opts.inBitmap = null;
-            bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, opts);
+            bmp = BitmapFactory.decodeByteArray(jpeg, 0, length, opts);
         }
         if (bmp != null) {
             slots[next] = bmp;

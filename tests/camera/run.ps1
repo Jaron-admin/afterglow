@@ -1,6 +1,7 @@
 param(
     [string]$JavaHome = 'F:\SDK\jdk-17',
-    [string]$AndroidJar = 'F:\SDK\platforms\android-36\android.jar'
+    [string]$AndroidJar = 'F:\SDK\platforms\android-36\android.jar',
+    [switch]$Benchmark
 )
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
@@ -18,5 +19,11 @@ try {
     foreach ($test in @('Yuv420ConverterTest', 'CameraSourceSizeTest', 'CameraReservationTest')) {
         & $java -cp "build\camera-tests;build\camera-production;$AndroidJar" "com.oldphone.ipcam.$test"
         if ($LASTEXITCODE -ne 0) { throw "Camera test failed: $test" }
+    }
+    if ($Benchmark) {
+        & $javac -encoding UTF-8 -cp build\camera-production -d build\camera-tests tests\camera\Yuv420ConverterBenchmark.java
+        if ($LASTEXITCODE -ne 0) { throw 'Converter benchmark compilation failed.' }
+        & $java -cp 'build\camera-tests;build\camera-production' com.oldphone.ipcam.Yuv420ConverterBenchmark
+        if ($LASTEXITCODE -ne 0) { throw 'Converter benchmark failed.' }
     }
 } finally { Pop-Location }

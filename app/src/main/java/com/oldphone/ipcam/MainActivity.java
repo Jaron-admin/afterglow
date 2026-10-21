@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -69,6 +70,12 @@ public final class MainActivity extends Activity {
     private TextView tvRtsp;
     private TextView tvMjpeg;
     private TextView tvSnapshot;
+    private TextView tvHttp;
+    private TextView btnAddress;
+    private AlertDialog haSetupDialog;
+    private List<NetUtils.Address> currentAddresses = new ArrayList<NetUtils.Address>();
+    private NetUtils.Address displayedAddress;
+    private String selectedAddressKey;
     private Button btnToggle;
     private TextView tvRecordingStatus;
     private TextView tvLastEvent;
@@ -77,6 +84,7 @@ public final class MainActivity extends Activity {
     private View rowRtsp;
     private View rowMjpeg;
     private View rowSnapshot;
+    private View rowHttp;
 
     private CropPreviewView ivPreview;
     private View flPreview;
@@ -134,13 +142,15 @@ public final class MainActivity extends Activity {
     private boolean suppressListener;
 
     // ---- 预览 ----
-    /** 解码线程：JPEG 解码不能放在相机线程，也不能放在 UI 线程 */
+    /** 预览 JPEG 编解码均在独立线程执行。 */
     private HandlerThread decodeThread;
-    private Handler decodeHandler;
+    private volatile Handler decodeHandler;
     /** 上一帧还没解完就丢新帧，避免慢机器上越积越多 */
     private final AtomicBoolean decoding = new AtomicBoolean(false);
-    /** 双缓冲 + inBitmap 复用，避免 8fps 下每秒几 MB 的 GC 压力 */
-    private final JpegFrameDecoder previewDecoder = new JpegFrameDecoder();
+    private final LocalPreviewDecoder previewDecoder = new LocalPreviewDecoder();
+    /** Capture callback owns these only while the single-frame gate is held. */
+    private FrameGeometry previewTransform;
+    private byte[] previewBuffer;
     private volatile boolean hasPreviewFrame;
     private volatile boolean previewActive;
     private volatile long previewEpoch;
@@ -183,51 +193,67 @@ public final class MainActivity extends Activity {
     private final CameraStreamService.PreviewListener previewListener =
             new CameraStreamService.PreviewListener() {
                 @Override
-                public void onPreviewFrame(final PreviewFrame frame) {
+                public void onPreviewFrame(byte[] nv21, final FrameGeometry geometry, final long generation) {
                     final Handler h = decodeHandler;
                     final long epoch = previewEpoch;
-                    if (h == null || !acceptPreview(frame, epoch)
+                    if (h == null || !acceptPreview(geometry, generation, epoch)
                             || !decoding.compareAndSet(false, true)) {
                         return;
                     }
-                    if (!h.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            Bitmap bmp = null;
-                            try {
-                                if (acceptPreview(frame, epoch)) {
-                                    bmp = previewDecoder.decode(frame.jpeg);
-                                }
-                            } catch (Throwable t) {
-                                Log.w("MainActivity", "preview decode failed", t);
-                            }
-                            if (bmp == null) {
-                                decoding.set(false);
-                                return;
-                            }
-                            final Bitmap out = bmp;
-                            // Hold the gate through the UI handoff: the decoder owns both
-                            // reusable bitmaps and must not overwrite one still queued to draw.
-                            if (!handler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    try {
-                                        if (acceptPreview(frame, epoch) && !isFinishing()) {
-                                            showPreviewFrame(out, frame);
-                                        }
-                                    } finally {
-                                        decoding.set(false);
-                                    }
-                                }
-                            })) {
-                                decoding.set(false);
-                            }
+                    boolean queued = false;
+                    try {
+                        if (!acceptPreview(geometry, generation, epoch)) {
+                            return;
                         }
-                    })) {
-                        decoding.set(false);
+                        if (previewTransform == null || previewTransform.revision != geometry.revision
+                                || previewTransform.rawWidth != geometry.rawWidth
+                                || previewTransform.rawHeight != geometry.rawHeight
+                                || previewTransform.rotation != geometry.rotation) {
+                            previewTransform = FrameGeometry.preview(geometry.rawWidth, geometry.rawHeight,
+                                    geometry.rotation, 960, geometry.revision);
+                        }
+                        int bytes = previewTransform.outputWidth * previewTransform.outputHeight * 3 / 2;
+                        if (previewBuffer == null || previewBuffer.length != bytes) previewBuffer = new byte[bytes];
+                        // Camera owns nv21. Finish scaling/copying before this callback returns.
+                        Nv21Transform.render(nv21, previewTransform, previewBuffer);
+                        final PreviewFrame frame = new PreviewFrame(previewBuffer,
+                                previewTransform.outputWidth, previewTransform.outputHeight, geometry, generation);
+                        queued = h.post(new Runnable() {
+                            @Override public void run() { decodePreview(frame, epoch); }
+                        });
+                    } catch (Throwable failure) {
+                        Log.w("MainActivity", "preview transform or handoff failed", failure);
+                    } finally {
+                        if (!queued) decoding.set(false);
                     }
                 }
             };
+
+    private void decodePreview(final PreviewFrame frame, final long epoch) {
+        boolean handedToUi = false;
+        try {
+            if (!acceptPreview(frame.geometry, frame.generation, epoch)) return;
+            final Bitmap bitmap = previewDecoder.decode(frame);
+            if (bitmap == null) return;
+            // Keep both NV21 and bitmap ownership until the UI accepts or discards the frame.
+            handedToUi = handler.post(new Runnable() {
+                @Override public void run() {
+                    try {
+                        if (acceptPreview(frame.geometry, frame.generation, epoch) && !isFinishing()) {
+                            showPreviewFrame(bitmap, frame);
+                            previewDecoder.presented(bitmap);
+                        }
+                    } finally {
+                        decoding.set(false);
+                    }
+                }
+            });
+        } catch (Throwable failure) {
+            Log.w("MainActivity", "preview decode or UI handoff failed", failure);
+        } finally {
+            if (!handedToUi) decoding.set(false);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -342,7 +368,7 @@ public final class MainActivity extends Activity {
         refreshUi();
         handler.removeCallbacks(refresher);
         handler.post(refresher);
-        // 只有界面在前台时才让服务压缩预览帧，退到后台立刻停止，省 CPU
+        // 只有界面在前台时才接收预览帧，退到后台立刻停止，省 CPU。
         CameraStreamService.setPreviewListener(previewListener);
 
         // 首次进入自动扫一次，之后交给「重新扫描」按钮，避免每次切回都扫全网段
@@ -378,6 +404,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (haSetupDialog != null) haSetupDialog.dismiss();
         previewActive = false;
         previewEpoch++;
         handler.removeCallbacksAndMessages(null);
@@ -401,6 +428,9 @@ public final class MainActivity extends Activity {
         rowRtsp = findViewById(R.id.rowRtsp);
         rowMjpeg = findViewById(R.id.rowMjpeg);
         rowSnapshot = findViewById(R.id.rowSnapshot);
+        rowHttp = findViewById(R.id.rowHttp);
+        tvHttp = (TextView) findViewById(R.id.tvHttp);
+        btnAddress = (TextView) findViewById(R.id.btnAddress);
 
         ivPreview = (CropPreviewView) findViewById(R.id.ivPreview);
         flPreview = findViewById(R.id.flPreview);
@@ -1030,8 +1060,17 @@ public final class MainActivity extends Activity {
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle(R.string.help_title)
                         .setMessage(R.string.help_body)
+                        .setNeutralButton(R.string.ha_setup_title, new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) { showHaSetup(); }
+                        })
                         .setPositiveButton(android.R.string.ok, null).show();
             }
+        });
+        btnAddress.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showAddressPicker(); }
+        });
+        findViewById(R.id.btnHaSetup).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showHaSetup(); }
         });
 
         View.OnClickListener copyRtsp = new View.OnClickListener() {
@@ -1055,6 +1094,9 @@ public final class MainActivity extends Activity {
         rowRtsp.setOnClickListener(copyRtsp);
         rowMjpeg.setOnClickListener(copyMjpeg);
         rowSnapshot.setOnClickListener(copySnapshot);
+        rowHttp.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { copy(tvHttp.getText().toString()); }
+        });
 
         btnRescan.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1114,13 +1156,25 @@ public final class MainActivity extends Activity {
         llDevices.addView(row);
     }
 
-    private void openViewer(LanScanner.Device device) {
+    private void openViewer(final LanScanner.Device device) {
+        if (device.httpAuthRequired && !device.rtspOnly) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.viewer_http_auth_title)
+                    .setMessage(R.string.viewer_http_auth_hint)
+                    .setPositiveButton(R.string.copy_http_address, new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface dialog, int which) {
+                            copy(String.format(Locale.US, "http://%s:%d/", device.ip, device.httpPort));
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null).show();
+            return;
+        }
         Intent intent = new Intent(this, ViewerActivity.class);
         intent.putExtra(ViewerActivity.EXTRA_IP, device.ip);
         intent.putExtra(ViewerActivity.EXTRA_LABEL, device.detail());
         intent.putExtra(ViewerActivity.EXTRA_RTSP_ONLY, device.rtspOnly);
-        intent.putExtra(ViewerActivity.EXTRA_HTTP_PORT, CameraStreamService.HTTP_PORT);
-        intent.putExtra(ViewerActivity.EXTRA_RTSP_PORT, CameraStreamService.RTSP_PORT);
+        intent.putExtra(ViewerActivity.EXTRA_HTTP_PORT, device.httpPort);
+        intent.putExtra(ViewerActivity.EXTRA_RTSP_PORT, device.rtspPort);
         intent.putExtra(EXTRA_UI_SHOT, shotRequested);
         try {
             startActivity(intent);
@@ -1344,7 +1398,7 @@ public final class MainActivity extends Activity {
             tvDetail.setText(error);
         } else if (running) {
             String detail = String.format(Locale.US,
-                    "%s · %d×%d · %d fps",
+                    "%s · %d×%d · 处理 %d fps",
                     CameraStreamService.cameraLabel,
                     CameraStreamService.videoWidth, CameraStreamService.videoHeight,
                     CameraStreamService.measuredFps);
@@ -1379,14 +1433,14 @@ public final class MainActivity extends Activity {
         refreshAddresses();
     }
 
-    private boolean acceptPreview(PreviewFrame frame, long epoch) {
+    private boolean acceptPreview(FrameGeometry geometry, long generation, long epoch) {
         FrameGeometry latest = CameraStreamService.frameGeometry;
         return previewActive && epoch == previewEpoch && CameraStreamService.running
                 && !CameraStreamService.reconfiguring
-                && frame.generation != rejectedPreviewGeneration
-                && frame.generation == CameraStreamService.streamGeneration
-                && frame.geometry != null && latest != null
-                && frame.geometry.revision == latest.revision;
+                && generation != rejectedPreviewGeneration
+                && generation == CameraStreamService.streamGeneration
+                && geometry != null && latest != null
+                && geometry.revision == latest.revision;
     }
 
     private void resetPreview() {
@@ -1436,30 +1490,176 @@ public final class MainActivity extends Activity {
 
     private void refreshAddresses() {
         boolean rtsp = Prefs.needRtsp(), mjpeg = Prefs.needMjpeg();
-        String ip = rtsp || mjpeg ? NetUtils.localIp() : "";
-        rowRtsp.setEnabled(rtsp);
-        rowMjpeg.setEnabled(mjpeg);
-        rowSnapshot.setEnabled(mjpeg);
-        rowRtsp.setAlpha(rtsp ? 1f : 0.5f);
-        rowMjpeg.setAlpha(mjpeg ? 1f : 0.5f);
-        rowSnapshot.setAlpha(mjpeg ? 1f : 0.5f);
+        boolean network = rtsp || mjpeg;
+        currentAddresses = network ? NetUtils.localAddresses() : new ArrayList<NetUtils.Address>();
+        displayedAddress = null;
+        for (NetUtils.Address address : currentAddresses) {
+            if (addressKey(address).equals(selectedAddressKey)) {
+                displayedAddress = address;
+                break;
+            }
+        }
+        if (displayedAddress == null && !currentAddresses.isEmpty()) {
+            // An unavailable explicit choice falls back to the preferred live interface.
+            // Automatic selection remains automatic when a LAN interface later appears.
+            selectedAddressKey = null;
+            displayedAddress = currentAddresses.get(0);
+        }
+        boolean available = network && displayedAddress != null;
+        String ip = available ? displayedAddress.ip : "";
+        String unavailable = getString(network ? R.string.address_unavailable : R.string.address_disabled);
+        btnAddress.setEnabled(available);
+        btnAddress.setAlpha(available ? 1f : 0.5f);
+        btnAddress.setText(available ? getString(R.string.address_choice,
+                addressLabel(displayedAddress), currentAddresses.size()) : unavailable);
+        rowHttp.setEnabled(available);
+        rowHttp.setAlpha(available ? 1f : 0.5f);
+        tvHttp.setText(available ? String.format(Locale.US, "http://%s:%d/", ip,
+                CameraStreamService.HTTP_PORT) : unavailable);
+        rowRtsp.setEnabled(rtsp && available);
+        rowMjpeg.setEnabled(mjpeg && available);
+        rowSnapshot.setEnabled(mjpeg && available);
+        rowRtsp.setAlpha(rtsp && available ? 1f : 0.5f);
+        rowMjpeg.setAlpha(mjpeg && available ? 1f : 0.5f);
+        rowSnapshot.setAlpha(mjpeg && available ? 1f : 0.5f);
 
-        if (!rtsp) {
-            tvRtsp.setText(getString(R.string.address_disabled));
+        if (!rtsp || !available) {
+            tvRtsp.setText(rtsp ? unavailable : getString(R.string.address_disabled));
         } else {
             tvRtsp.setText(String.format(Locale.US, "rtsp://%s:%d/live", ip,
                     CameraStreamService.RTSP_PORT));
         }
 
-        if (!mjpeg) {
-            tvMjpeg.setText(getString(R.string.address_disabled));
-            tvSnapshot.setText(getString(R.string.address_disabled));
+        if (!mjpeg || !available) {
+            tvMjpeg.setText(mjpeg ? unavailable : getString(R.string.address_disabled));
+            tvSnapshot.setText(mjpeg ? unavailable : getString(R.string.address_disabled));
         } else {
             tvMjpeg.setText(String.format(Locale.US, "http://%s:%d/video", ip,
                     CameraStreamService.HTTP_PORT));
             tvSnapshot.setText(String.format(Locale.US, "http://%s:%d/snapshot.jpg", ip,
                     CameraStreamService.HTTP_PORT));
         }
+        updateHaSetupDialog();
+    }
+
+    private static String addressKey(NetUtils.Address address) {
+        return address.interfaceName + "/" + address.ip;
+    }
+
+    private String addressLabel(NetUtils.Address address) {
+        int kind;
+        switch (address.kind) {
+            case NetUtils.WIFI: kind = R.string.network_wifi; break;
+            case NetUtils.ETHERNET: kind = R.string.network_ethernet; break;
+            case NetUtils.HOTSPOT: kind = R.string.network_hotspot; break;
+            case NetUtils.USB: kind = R.string.network_usb; break;
+            case NetUtils.VPN: kind = R.string.network_vpn; break;
+            case NetUtils.MOBILE: kind = R.string.network_mobile; break;
+            default: kind = R.string.network_other;
+        }
+        return getString(R.string.address_label, getString(kind), address.interfaceName, address.ip);
+    }
+
+    private void showAddressPicker() {
+        refreshAddresses();
+        if (currentAddresses.isEmpty()) return;
+        final List<NetUtils.Address> choices = new ArrayList<NetUtils.Address>(currentAddresses);
+        String[] labels = new String[choices.size()];
+        for (int i = 0; i < choices.size(); i++) labels[i] = addressLabel(choices.get(i));
+        new AlertDialog.Builder(this).setTitle(R.string.address_select_title)
+                .setSingleChoiceItems(labels, choices.indexOf(displayedAddress),
+                        new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                selectedAddressKey = addressKey(choices.get(which));
+                                refreshAddresses();
+                                dialog.dismiss();
+                            }
+                        })
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private void showHaSetup() {
+        refreshAddresses();
+        final AlertDialog guide = new AlertDialog.Builder(this)
+                .setTitle(R.string.ha_setup_title)
+                .setMessage(haSetupMessage())
+                .setPositiveButton(R.string.ha_copy_rtsp, null)
+                .setNegativeButton(R.string.ha_copy_snapshot, null)
+                .setNeutralButton(R.string.ha_advanced_title, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) { showHaAdvanced(); }
+                }).create();
+        haSetupDialog = guide;
+        guide.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(DialogInterface dialog) {
+                if (haSetupDialog == guide) haSetupDialog = null;
+            }
+        });
+        guide.show();
+        // Keep the instructions open while either address is copied.
+        guide.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                refreshAddresses();
+                if (rowRtsp.isEnabled()) copy(tvRtsp.getText().toString());
+            }
+        });
+        guide.getButton(DialogInterface.BUTTON_NEGATIVE).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                refreshAddresses();
+                if (rowSnapshot.isEnabled()) copy(tvSnapshot.getText().toString());
+            }
+        });
+        updateHaSetupDialog();
+        TextView message = (TextView) guide.findViewById(android.R.id.message);
+        if (message != null) message.setTextIsSelectable(true);
+    }
+
+    private String haSetupMessage() {
+        String unavailable = getString(R.string.ha_address_not_ready);
+        return getString(R.string.ha_setup_steps,
+                rowSnapshot.isEnabled() ? tvSnapshot.getText().toString() : unavailable,
+                rowRtsp.isEnabled() ? tvRtsp.getText().toString() : unavailable);
+    }
+
+    private void updateHaSetupDialog() {
+        if (haSetupDialog == null || !haSetupDialog.isShowing()) return;
+        haSetupDialog.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(rowRtsp.isEnabled());
+        haSetupDialog.getButton(DialogInterface.BUTTON_NEGATIVE).setEnabled(rowSnapshot.isEnabled());
+        TextView message = (TextView) haSetupDialog.findViewById(android.R.id.message);
+        String updated = haSetupMessage();
+        // Avoid resetting selection/scroll position on every normal status refresh.
+        if (message != null && !updated.contentEquals(message.getText())) {
+            message.setText(updated);
+        }
+    }
+
+    private void showHaAdvanced() {
+        refreshAddresses();
+        final String http = rowHttp.isEnabled() ? tvHttp.getText().toString() : null;
+        AlertDialog.Builder guide = new AlertDialog.Builder(this)
+                .setTitle(R.string.ha_advanced_title)
+                .setMessage(getString(R.string.ha_advanced_steps,
+                        http == null ? getString(R.string.ha_address_not_ready) : http))
+                .setPositiveButton(android.R.string.ok, null)
+                .setNegativeButton(R.string.ha_online_guide, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW,
+                                    Uri.parse(getString(R.string.ha_guide_url))));
+                        } catch (android.content.ActivityNotFoundException unavailable) {
+                            Toast.makeText(MainActivity.this, R.string.browser_unavailable,
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+        if (http != null) {
+            guide.setNeutralButton(R.string.copy_http_address, new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface dialog, int which) {
+                    refreshAddresses();
+                    if (rowHttp.isEnabled()) copy(tvHttp.getText().toString());
+                }
+            });
+        }
+        guide.show();
     }
 
     /** Render the current viewport, including both panes, without relaying out live views. */

@@ -1,0 +1,34 @@
+{
+  "title": "余光 · Afterglow",
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "连接余光手机",
+        "description": "填写局域网主机名或 IP，也可粘贴手机显示的 HTTP 地址；地址中的端口优先。手机未启用 HTTP 验证时，用户名和密码可留空。",
+        "data": {"host": "主机名、IP 或 HTTP 地址", "port": "HTTP 端口", "username": "HTTP 用户名", "password": "HTTP 密码"}
+      },
+      "reconfigure": {
+        "title": "更新连接",
+        "description": "新地址必须对应同一个余光安装实例。",
+        "data": {"host": "主机名或 IP", "port": "HTTP 端口", "username": "HTTP 用户名", "password": "HTTP 密码"}
+      },
+      "reauth_confirm": {
+        "title": "更新手机访问凭据",
+        "description": "填写手机上设置的 HTTP 访问用户名和密码。",
+        "data": {"host": "主机名或 IP", "port": "HTTP 端口", "username": "HTTP 用户名", "password": "HTTP 密码"}
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接兼容的余光 API，请检查地址、服务是否运行及网络连接。",
+      "invalid_auth": "手机拒绝了此 HTTP 用户名或密码。",
+      "wrong_device": "此地址对应另一个余光安装实例。"
+    },
+    "abort": {
+      "already_configured": "此手机已配置；如地址有变化，已更新连接信息。",
+      "cannot_connect": "无法核实所发现手机的身份。",
+      "reauth_successful": "手机访问凭据已更新。",
+      "reconfigure_successful": "连接信息已更新。"
+    }
+  }
+}

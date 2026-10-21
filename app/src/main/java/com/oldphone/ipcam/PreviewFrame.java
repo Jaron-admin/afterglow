@@ -1,13 +1,17 @@
 package com.oldphone.ipcam;
 
-/** One complete upright JPEG and the exact crop/output plan used for that capture. */
+/** Owned, scaled upright NV21 plus the original full-view crop/output plan. */
 public final class PreviewFrame {
-    public final byte[] jpeg;
+    public final byte[] nv21;
+    public final int width, height;
     public final FrameGeometry geometry;
     public final long generation;
 
-    public PreviewFrame(byte[] jpeg, FrameGeometry geometry, long generation) {
-        this.jpeg = jpeg;
+    /** The caller retains exclusive buffer ownership until decode/UI handoff finishes. */
+    public PreviewFrame(byte[] nv21, int width, int height, FrameGeometry geometry, long generation) {
+        this.nv21 = nv21;
+        this.width = width;
+        this.height = height;
         this.geometry = geometry;
         this.generation = generation;
     }

@@ -34,9 +34,9 @@ public final class CameraStreamService extends Service {
     public static final String ACTION_ORIENTATION_SETTINGS =
             "com.oldphone.ipcam.action.ORIENTATION_SETTINGS";
 
-    /** Complete upright view plus its exact output crop, never an output-only JPEG. */
+    /** Borrowed raw frame plus exact geometry, valid only during the synchronous call. */
     public interface PreviewListener {
-        void onPreviewFrame(PreviewFrame frame);
+        void onPreviewFrame(byte[] nv21, FrameGeometry geometry, long generation);
     }
     private static volatile PreviewListener previewListener;
     public static void setPreviewListener(PreviewListener listener) { previewListener = listener; }
@@ -91,6 +91,7 @@ public final class CameraStreamService extends Service {
     private H264Encoder encoder;
     private RtspServer rtspServer;
     private MjpegServer mjpegServer;
+    private ServiceDiscovery discovery;
     private RecordingManager recorder;
     private AudioCapture audioCapture;
     private MotionDetector motionDetector;
@@ -101,15 +102,12 @@ public final class CameraStreamService extends Service {
     private int outputHeight;
     private int fps;
     private int bitrate;
-    private int mjpegFps;
     private byte[] outputBuffer;
-    private byte[] fullPreviewBuffer;
     private FrameGeometry geometry;
     private long appliedOrientationSettings = -1;
     private int manualRotation;
-    private long lastProcessedNanos;
-    private long lastOutputJpegNanos;
-    private long lastPreviewNanos;
+    private final FramePacer framePacer = new FramePacer(15);
+    private final MjpegCadence outputJpegPacer = new MjpegCadence();
     private long fpsWindowStart;
     private int fpsWindowCount;
     private final ByteArrayOutputStream jpegBuffer = new ByteArrayOutputStream(256 * 1024);
@@ -130,6 +128,7 @@ public final class CameraStreamService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         Prefs.init(this);
+        discovery = new ServiceDiscovery(this);
         mainHandler = new Handler(getMainLooper());
         stateOwner = this;
         frameGeometry = null;
@@ -275,7 +274,7 @@ public final class CameraStreamService extends Service {
         outputHeight = Prefs.outputHeight();
         fps = Prefs.fps();
         bitrate = Prefs.bitrate();
-        mjpegFps = Math.min(fps, 12);
+        framePacer.setFps(fps);
         acquireWakeLock();
         capture = CameraCapture.open(this, Prefs.cameraKey(), outputWidth, outputHeight,
                 fps, cameraHandler, new CameraCapture.Listener() {
@@ -302,9 +301,8 @@ public final class CameraStreamService extends Service {
         outputBuffer = new byte[(int) outputBytes];
         startServers(generation);
         if (!isSessionCurrent(generation)) return;
-        lastProcessedNanos = 0;
-        lastOutputJpegNanos = 0;
-        lastPreviewNanos = 0;
+        framePacer.reset();
+        outputJpegPacer.reset();
         fpsWindowStart = 0;
         fpsWindowCount = 0;
         streaming = true;
@@ -368,16 +366,20 @@ public final class CameraStreamService extends Service {
                         + outputHeight + "，" + fps + " fps）：" + errorMessage(failure), failure);
             }
         }
-        if (Prefs.needMjpeg()) {
+        if (Prefs.mode() != Prefs.MODE_LOCAL) {
             try {
                 mjpegServer = new MjpegServer(HTTP_PORT);
+                mjpegServer.setDeviceInfo(Prefs.deviceId(), Prefs.deviceName(), Prefs.needRtsp(), Prefs.needMjpeg());
+                mjpegServer.setRecordings(new RecordingHttpApi(
+                        new RecordingHttpRepository(this, Prefs.recordingTarget())));
                 if (Prefs.getBool(Prefs.KEY_AUTH, false)) {
                     mjpegServer.setBasicAuth(Prefs.getStr(Prefs.KEY_USER, "admin"),
                             Prefs.getStr(Prefs.KEY_PASS, "123456"));
                 }
                 mjpegServer.start();
+                discovery.start(HTTP_PORT);
             } catch (Throwable failure) {
-                throw new IOException("MJPEG 服务启动失败：" + errorMessage(failure), failure);
+                throw new IOException("HTTP 服务启动失败：" + errorMessage(failure), failure);
             }
         }
         if (microphone) {
@@ -435,8 +437,7 @@ public final class CameraStreamService extends Service {
                 if (isSessionCurrent(generation)) frameGeometry = geometry;
             }
             // Publish the newly cropped snapshot and full preview promptly.
-            lastOutputJpegNanos = 0;
-            lastPreviewNanos = 0;
+            outputJpegPacer.reset();
         }
         return geometry;
     }
@@ -444,9 +445,7 @@ public final class CameraStreamService extends Service {
     private void processFrame(byte[] nv21, int rawWidth, int rawHeight, long generation) {
         if (!streaming || capture == null || !isSessionCurrent(generation)) return;
         long now = System.nanoTime();
-        long minInterval = 1_000_000_000L / Math.max(1, fps);
-        if (lastProcessedNanos != 0 && now - lastProcessedNanos < minInterval) return;
-        lastProcessedNanos = now;
+        if (!framePacer.shouldRun(now)) return;
         try {
             final FrameGeometry framePlan = geometryForFrame(rawWidth, rawHeight, generation);
             Nv21Transform.render(nv21, framePlan, outputBuffer);
@@ -456,36 +455,19 @@ public final class CameraStreamService extends Service {
                 detected(recorder, "画面变动", now / 1000L, generation);
 
             // Remote MJPEG/snapshot always receive the cropped fixed-size output.
-            if (mjpegServer != null) {
-                long interval = mjpegServer.hasClients()
-                        ? 1_000_000_000L / Math.max(1, mjpegFps) : 2_000_000_000L;
-                if (lastOutputJpegNanos == 0 || now - lastOutputJpegNanos >= interval) {
-                    lastOutputJpegNanos = now;
+            if (mjpegServer != null && mjpegServer.isMjpegEnabled()) {
+                if (outputJpegPacer.shouldPublish(now, mjpegServer.hasStreamClients())) {
                     byte[] jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
                     if (jpeg != null && isSessionCurrent(generation)) mjpegServer.pushJpeg(jpeg);
                 }
             }
 
-            // Local preview keeps the complete view so the UI can draw the exact crop
-            // mask. No full-frame rotation/allocation is done without a listener.
+            // The activity admits at most one frame, copies a bounded full-view buffer
+            // before returning, then does JPEG work off this capture/encoder worker.
             PreviewListener listener = previewListener;
-            if (listener != null && (lastPreviewNanos == 0
-                    || now - lastPreviewNanos >= 1_000_000_000L / 8)) {
-                lastPreviewNanos = now;
-                byte[] fullFrame = nv21;
-                if (framePlan.rotation != 0) {
-                    int size = framePlan.fullWidth * framePlan.fullHeight * 3 / 2;
-                    if (fullPreviewBuffer == null || fullPreviewBuffer.length != size) {
-                        fullPreviewBuffer = new byte[size];
-                    }
-                    Nv21Transform.rotateFull(nv21, framePlan, fullPreviewBuffer);
-                    fullFrame = fullPreviewBuffer;
-                }
-                byte[] jpeg = compressToJpeg(fullFrame, framePlan.fullWidth, framePlan.fullHeight);
-                if (jpeg != null && isSessionCurrent(generation)) {
-                    try { listener.onPreviewFrame(new PreviewFrame(jpeg, framePlan, generation)); }
-                    catch (Throwable ignored) { /* Activity replacement must not stop streaming. */ }
-                }
+            if (listener != null && isSessionCurrent(generation)) {
+                try { listener.onPreviewFrame(nv21, framePlan, generation); }
+                catch (Throwable ignored) { /* Activity replacement must not stop streaming. */ }
             }
         } catch (Throwable failure) {
             Log.e(TAG, "frame transform failed", failure);
@@ -519,6 +501,7 @@ public final class CameraStreamService extends Service {
 
     /** Worker-only and idempotent, including every partially initialized resource. */
     private void closeResources() {
+        if (discovery != null) discovery.stop();
         streaming = false;
         CameraCapture oldCapture = capture;
         capture = null;
@@ -559,7 +542,6 @@ public final class CameraStreamService extends Service {
         releaseWakeLock();
         captureEntry = null;
         outputBuffer = null;
-        fullPreviewBuffer = null;
         geometry = null;
         appliedOrientationSettings = -1;
         if (stateOwner == this) {
@@ -578,10 +560,10 @@ public final class CameraStreamService extends Service {
     }
 
     private void updateFps(long now) {
-        if (fpsWindowStart == 0) { fpsWindowStart = now; fpsWindowCount = 0; }
+        if (fpsWindowStart == 0) { fpsWindowStart = now; fpsWindowCount = 0; return; }
         fpsWindowCount++;
         if (now - fpsWindowStart >= 1_000_000_000L) {
-            measuredFps = fpsWindowCount;
+            measuredFps = (int) Math.round(fpsWindowCount * 1_000_000_000.0 / (now - fpsWindowStart));
             fpsWindowCount = 0;
             fpsWindowStart = now;
             if (rtspServer != null) rtspClients = rtspServer.clientCount();

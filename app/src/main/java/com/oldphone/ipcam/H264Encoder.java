@@ -226,11 +226,14 @@ public final class H264Encoder {
         return colorFormat;
     }
 
-    /** 送一帧 NV21 进去，非阻塞 */
+    /** 先释放已完成的输出，再以有界等待送入一帧 NV21。 */
     public void encode(byte[] nv21, long ptsUs) {
         if (!started) {
             return;
         }
+        // A completed output can hold the codec's last slot between camera callbacks.
+        // Release it before waiting for input, otherwise this frame may be needlessly dropped.
+        drain(0);
         int inIndex = codec.dequeueInputBuffer(5000);
         if (inIndex >= 0) {
             ByteBuffer in = (Build.VERSION.SDK_INT >= 21)

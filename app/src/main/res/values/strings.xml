@@ -66,7 +66,7 @@
     <string name="label_bitrate">码率</string>
     <string name="label_mode">输出模式</string>
     <string name="label_boot">开机自动启动</string>
-    <string name="label_auth">访问验证（MJPEG）</string>
+    <string name="label_auth">访问验证（HTTP）</string>
 
     <string name="hint_user">用户名</string>
     <string name="hint_pass">密码</string>
@@ -76,7 +76,32 @@
     <string name="copied">已复制到剪贴板</string>
     <string name="status_switching">正在切换…</string>
     <string name="address_disabled">未启用</string>
+    <string name="address_unavailable">暂无可用地址</string>
+    <string name="address_select_title">选择访问地址</string>
+    <string name="address_choice">选择访问地址 · 共 %2$d 个\n%1$s ▾</string>
+    <string name="address_label">%1$s（%2$s）\n%3$s</string>
+    <string name="network_wifi">Wi-Fi</string>
+    <string name="network_ethernet">有线网络</string>
+    <string name="network_hotspot">热点</string>
+    <string name="network_usb">USB 网络</string>
+    <string name="network_vpn">VPN / 隧道</string>
+    <string name="network_mobile">移动网络</string>
+    <string name="network_other">其他网卡</string>
+    <string name="addr_http">HTTP</string>
+    <string name="viewer_http_auth_title">此设备需要 HTTP 验证</string>
+    <string name="viewer_http_auth_hint">手机内的预览暂不支持输入 HTTP 用户名和密码。可在浏览器打开 HTTP 地址后登录，或在 Home Assistant 中配置访问凭据。</string>
+    <string name="copy_http_address">复制 HTTP 地址</string>
+    <string name="ha_setup_title">接入 Home Assistant</string>
+    <string name="ha_online_guide">在线教程</string>
+    <string name="ha_address_not_ready">请先连接 Wi-Fi，并选择 RTSP + MJPEG。</string>
+    <string name="browser_unavailable">未找到浏览器，请在项目 README 查看教程。</string>
+    <string name="ha_guide_url" translatable="false">https://github.com/Jaron-admin/afterglow/blob/main/homeassistant/README.md</string>
+    <string name="ha_setup_steps">使用 HA 自带的 Generic Camera（通用摄像头）即可看实时画面。\n\n1. 准备手机\n手机和 HA 连到同一局域网。在余光选择 RTSP + MJPEG，点击“开始”。\n\n2. 添加摄像头\n在 HA 打开“设置 → 设备与服务 → 添加集成”，搜索 Generic Camera（通用摄像头）。\n\n3. 填写地址\n把 JPEG 快照填入 Still Image URL（静态图像 URL）：\n%1$s\n\n把 RTSP 填入 Stream Source（流来源）：\n%2$s\n\n手机开启“访问验证（HTTP）”时，填写相同用户名、密码，认证选 Basic；未开启则留空。RTSP 传输保持 TCP。下方按钮可分别复制两条地址。\n\n4. 查看画面\n保存并按提示完成配置，打开新增摄像头查看实时画面，再按需添加到仪表盘。\n\n此方式用于实时画面。浏览手机录像请看“进阶”。\n\n常见问题\n• 连不上？确认手机已点“开始”、模式为 RTSP + MJPEG，HA 能访问所选地址；10.x.x.x 也可以是正常内网地址。开启访问验证时核对用户名、密码和 Basic 认证。\n• 黑屏或卡顿？核对两条地址没有填反，RTSP 传输为 TCP，并打开实时画面。改善 Wi-Fi 信号；旧手机可先降低分辨率再比较。\n• 手机 IP 变了？在 Generic Camera 的配置中更新两条地址；也可在路由器为手机保留地址，减少变动。</string>
+    <string name="ha_copy_rtsp">复制 RTSP</string>
+    <string name="ha_copy_snapshot">复制快照</string>
+    <string name="ha_advanced_title">进阶</string>
+    <string name="ha_advanced_steps">需要在 HA 浏览手机录像时，可通过 HACS 安装 Afterglow。尚未安装 HACS，请先按“在线教程”中的官方指南安装与配置。\n\n在 HACS 右上角菜单打开“自定义仓库”，填入下面的网址，类别选 Integration（集成）：\nhttps://github.com/Jaron-admin/afterglow\n\n添加后打开 Afterglow，点击 Download（下载）。完整重启 HA，再到“设置 → 设备与服务 → 添加集成 → Afterglow”，选择发现的设备或填写手机 HTTP 地址：\n%1$s\n\n开启访问验证时，填写手机上相同的用户名和密码。原来的 Generic Camera 不会自动转换。\n\n在“媒体 → Afterglow → 设备”中播放已完成的录像并拖动进度。只显示当前所选存储中的片段；浏览时保持手机在网络模式下采集。\n\n专用集成可在收到局域网发现信息时跟随手机 IP 变化。外出时继续通过现有 Tailscale 打开家里的 HA，由 HA 连接余光手机。</string>
     <string name="help_title">帮助</string>
-    <string name="help_body">将手机与查看设备连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC、Home Assistant 等使用，MJPEG 可用浏览器查看。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。MJPEG 访问验证在输入完成或离开输入框后生效。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
 </resources>

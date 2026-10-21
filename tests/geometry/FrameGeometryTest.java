@@ -30,10 +30,41 @@ public final class FrameGeometryTest {
         testCropExcludesMaskedPixels();
         testFusedRotatedCrop();
         compareFusedToFullFrame();
+        testBoundedFullPreview();
         invalid(new Runnable() { public void run() { FrameGeometry.create(5, 4, 0, 4, 4, 0); }});
         invalid(new Runnable() { public void run() { FrameGeometry.create(4, 4, 45, 4, 4, 0); }});
         invalid(new Runnable() { public void run() { FrameGeometry.create(4, 4, 0, 4096, 4096, 0); }});
         System.out.println("PASS geometry: upright rotations, fixed output, crop boundaries, NV21 pixels/chroma, invalid sizes");
+    }
+
+    private static void testBoundedFullPreview() {
+        for (int rotation = 0; rotation < 360; rotation += 90) {
+            FrameGeometry g = FrameGeometry.preview(1920, 1080, rotation, 960, 72);
+            equal(0, g.cropLeft, "preview keeps left edge");
+            equal(0, g.cropTop, "preview keeps top edge");
+            equal(g.fullWidth, g.cropWidth, "preview keeps complete width");
+            equal(g.fullHeight, g.cropHeight, "preview keeps complete height");
+            equal(rotation % 180 == 0 ? 960 : 540, g.outputWidth, "bounded preview width");
+            equal(rotation % 180 == 0 ? 540 : 960, g.outputHeight, "bounded preview height");
+            byte[] raw = new byte[1920 * 1080 * 3 / 2];
+            for (int i = 0; i < raw.length; i++) raw[i] = (byte) (i * 13);
+            byte[] rotated = new byte[raw.length];
+            Nv21Transform.rotateFull(raw, g, rotated);
+            byte[] actual = new byte[g.outputWidth * g.outputHeight * 3 / 2];
+            byte[] expected = new byte[actual.length];
+            Nv21Transform.render(raw, g, actual);
+            Nv21Transform.render(rotated, FrameGeometry.create(g.fullWidth, g.fullHeight,
+                    0, g.outputWidth, g.outputHeight, 0), expected);
+            if (!Arrays.equals(expected, actual)) throw new AssertionError("preview rotation/color " + rotation);
+        }
+        FrameGeometry small = FrameGeometry.preview(640, 480, 90, 960, 73);
+        equal(480, small.outputWidth, "preview never upscales");
+        equal(640, small.outputHeight, "preview never upscales height");
+        FrameGeometry unusual = FrameGeometry.preview(1002, 666, 0, 960, 74);
+        equal(1002, unusual.cropWidth, "rounded dimensions must not crop full field of view");
+        equal(666, unusual.cropHeight, "rounded preview keeps all source rows");
+        equal(0, (unusual.outputWidth | unusual.outputHeight) & 1, "preview NV21 alignment");
+        invalid(new Runnable() { public void run() { FrameGeometry.preview(640, 480, 0, 1, 0); }});
     }
 
     private static void testPixelsAndChroma() {

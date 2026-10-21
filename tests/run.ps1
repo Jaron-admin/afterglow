@@ -6,10 +6,18 @@ $ErrorActionPreference = 'Stop'
 if (!$JavaHome) { throw 'Set JAVA_HOME or pass -JavaHome with a JDK 17 directory.' }
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    & "$PSScriptRoot\network-addresses\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Network address tests failed.' }
+    & "$PSScriptRoot\performance\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Frame pacing tests failed.' }
+    & "$PSScriptRoot\discovery\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
+    if ($LASTEXITCODE -ne 0) { throw 'Discovery tests failed.' }
     & "$PSScriptRoot\output\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
     if ($LASTEXITCODE -ne 0) { throw 'Output selection tests failed.' }
     & "$PSScriptRoot\geometry\run.ps1" -JavaHome $JavaHome
     if ($LASTEXITCODE -ne 0) { throw 'Geometry tests failed.' }
+    & "$PSScriptRoot\local-preview\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Local preview tests failed.' }
     & "$PSScriptRoot\camera\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
     if ($LASTEXITCODE -ne 0) { throw 'Camera conversion tests failed.' }
     & (Join-Path $JavaHome 'bin\javac.exe') -encoding UTF-8 -d build\lifecycle-tests app\src\main\java\com\oldphone\ipcam\StreamLifecycle.java tests\java\com\oldphone\ipcam\StreamLifecycleTest.java
