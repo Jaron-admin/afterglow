@@ -40,10 +40,13 @@ public final class Mp4FastStart {
         long length = file.length();
         if (length < 8) return new Placement(false, -1, length, length, length);
         RandomAccessFile input = new RandomAccessFile(file, "r");
+        long insertion = 0;
+        long moovAt = -1;
+        long moovSize = 0;
+        File temporary = null;
         try {
             long position = 0;
-            long insertion = 0;
-            long moovAt = -1, moovSize = 0, mdatAt = -1;
+            long mdatAt = -1;
             boolean first = true;
             while (position + 8 <= length) {
                 input.seek(position);
@@ -75,7 +78,8 @@ public final class Mp4FastStart {
             } catch (IllegalStateException compressed) {
                 return new Placement(false, moovAt, length, length, length);
             }
-            File temporary = new File(file.getParentFile(), file.getName() + ".faststart");
+            File parent = file.getParentFile();
+            temporary = new File(parent == null ? new File(".") : parent, file.getName() + ".faststart");
             FileOutputStream output = new FileOutputStream(temporary);
             byte[] buffer = new byte[64 * 1024];
             try {
@@ -87,24 +91,39 @@ public final class Mp4FastStart {
             } catch (IOException error) {
                 output.close();
                 temporary.delete();
+                temporary = null;
                 throw error;
             }
             output.close();
-            if (!temporary.renameTo(file)) {
-                if (file.exists() && !file.delete()) {
-                    temporary.delete();
-                    throw new IOException("无法替换已整理的录像");
-                }
-                if (!temporary.renameTo(file)) {
-                    temporary.delete();
-                    throw new IOException("无法替换已整理的录像");
-                }
-            }
-            long after = insertion + moovSize;
-            return new Placement(true, moovAt, length, after, file.length());
         } finally {
+            // Windows refuses to rename or delete a file that still has a handle.
             input.close();
         }
+        replace(temporary, file);
+        long after = insertion + moovSize;
+        return new Placement(true, moovAt, length, after, file.length());
+    }
+
+    /** POSIX can replace an existing file. Windows needs the original moved aside first. */
+    private static void replace(File temporary, File target) throws IOException {
+        if (temporary.renameTo(target)) return;
+        File parent = target.getParentFile();
+        File backup = new File(parent == null ? new File(".") : parent, target.getName() + ".replacing");
+        if (backup.exists() && !backup.delete()) {
+            temporary.delete();
+            throw new IOException("无法替换已整理的录像");
+        }
+        if (!target.renameTo(backup)) {
+            temporary.delete();
+            throw new IOException("无法替换已整理的录像");
+        }
+        if (!temporary.renameTo(target)) {
+            boolean restored = backup.renameTo(target);
+            temporary.delete();
+            if (!restored) throw new IOException("整理录像时原文件未能放回");
+            throw new IOException("无法替换已整理的录像");
+        }
+        backup.delete();
     }
 
     private static void patchTree(byte[] data, int start, int limit, long shift,
