@@ -24,7 +24,11 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
-/** H.264 and optional AAC-LC RTSP server, with independent TCP/UDP RTP tracks. */
+/**
+ * H.264 and optional audio RTSP server, with independent TCP/UDP RTP tracks.
+ * AAC-LC stays the first audio track for VLC and HA's HLS remux. A PCMA/8000
+ * track is added beside it because HA's WebRTC player only matches Opus/G.711.
+ */
 public final class RtspServer {
     private static final String TAG = "RtspServer";
     private static final int MAX_PAYLOAD = 1400;
@@ -40,6 +44,10 @@ public final class RtspServer {
     private volatile int bitrate = 1_000_000;
     private volatile AudioConfig audioConfig;
     private final Random random = new Random();
+    /** 16 kHz PCM gathered into one 80 ms PCMA packet. Touched only by the audio worker. */
+    private final short[] pcmPending = new short[1280];
+    private int pcmFilled;
+    private long pcmStartUs;
 
     public RtspServer(int port) { this.port = port; }
 
@@ -109,6 +117,35 @@ public final class RtspServer {
         for (Client client : clients) client.offer(frame);
     }
 
+    /**
+     * 16 kHz mono PCM from the same capture clock. Downsampled to PCMA/8000 so a
+     * WebRTC client can play it without an Opus transcoder. Call from the audio worker only.
+     */
+    public void pushPcm(short[] pcm, int count, long ptsUs) {
+        if (pcm == null || count <= 0 || audioConfig == null) return;
+        int index = 0;
+        while (index < count) {
+            if (pcmFilled == 0) pcmStartUs = ptsUs + index * 1000000L / 16000L;
+            int take = Math.min(pcmPending.length - pcmFilled, count - index);
+            System.arraycopy(pcm, index, pcmPending, pcmFilled, take);
+            pcmFilled += take;
+            index += take;
+            if (pcmFilled == pcmPending.length) flushPcm();
+        }
+    }
+
+    private void flushPcm() {
+        byte[] encoded = new byte[pcmFilled / 2];
+        for (int i = 0; i < encoded.length; i++) {
+            int mixed = ((int) pcmPending[i * 2] + (int) pcmPending[i * 2 + 1]) / 2;
+            encoded[i] = G711.alaw((short) mixed);
+        }
+        long pts = pcmStartUs;
+        pcmFilled = 0;
+        Frame frame = new Frame(encoded, pts, false, 2);
+        for (Client client : clients) client.offer(frame);
+    }
+
     public void stop() {
         Thread accept;
         synchronized (this) {
@@ -152,6 +189,7 @@ public final class RtspServer {
         private final AudioConfig audio = audioConfig;
         private final Track video = new Track(0, 90000, VIDEO_PT);
         private final Track sound = audio == null ? null : new Track(1, audio.rate, AUDIO_PT);
+        private final Track voice = audio == null ? null : new Track(2, 8000, 8);
         private final Track[] tracks;
         // A slow TCP client must not turn into seconds of video delay. Keep at most a
         // few frames queued (<= ~1.5s even at 5 fps); on overflow the oldest frame is
@@ -170,8 +208,10 @@ public final class RtspServer {
 
         Client(Socket socket) {
             this.socket = socket;
-            tracks = sound == null ? new Track[]{video} : new Track[]{video, sound};
+            if (sound == null) tracks = new Track[]{video};
+            else tracks = new Track[]{video, sound, voice};
             if (sound != null && sound.ssrc == video.ssrc) sound.ssrc++;
+            if (voice != null) while (voice.ssrc == video.ssrc || voice.ssrc == sound.ssrc) voice.ssrc++;
         }
 
         private final class Track {
@@ -202,7 +242,7 @@ public final class RtspServer {
         }
 
         void offer(Frame frame) {
-            Track track = frame.track == 0 ? video : sound;
+            Track track = frame.track == 0 ? video : frame.track == 1 ? sound : voice;
             if (!playing || closed || track == null || !track.setup) return;
             if (!queue.offer(frame)) { queue.poll(); queue.offer(frame); }
         }
@@ -280,6 +320,7 @@ public final class RtspServer {
 
         private Track trackForUrl(String url) {
             String path = url.split("\\?", 2)[0];
+            if (path.endsWith("/trackID=2")) return voice;
             if (path.endsWith("/trackID=1")) return sound;
             if (path.endsWith("/trackID=0") || path.endsWith("/live") || path.endsWith("/live/")) return video;
             return null;
@@ -359,6 +400,9 @@ public final class RtspServer {
                         .append(" streamtype=5;profile-level-id=1;mode=AAC-hbr;config=");
                 for (byte b : audio.config) sb.append(String.format(Locale.US, "%02x", b & 255));
                 sb.append(";SizeLength=13;IndexLength=3;IndexDeltaLength=3;constantDuration=1024\r\na=control:trackID=1\r\n");
+                // Leave direction unset. go2rtc treats an empty direction as recvonly and
+                // then matches this static payload against the browser's PCMA offer.
+                sb.append("m=audio 0 RTP/AVP 8\r\na=rtpmap:8 PCMA/8000/1\r\na=control:trackID=2\r\n");
             }
             return sb.toString();
         }
@@ -419,9 +463,11 @@ public final class RtspServer {
                 try {
                     Frame frame = queue.poll(500, TimeUnit.MILLISECONDS);
                     if (frame == null || !playing) continue;
-                    Track track = frame.track == 0 ? video : sound;
+                    Track track = frame.track == 0 ? video : frame.track == 1 ? sound : voice;
                     if (track == null || !track.setup) continue;
-                    if (frame.track == 1) sendAudio(track, frame); else sendVideo(track, frame);
+                    if (frame.track == 1) sendAudio(track, frame);
+                    else if (frame.track == 2) sendVoice(track, frame);
+                    else sendVideo(track, frame);
                 } catch (InterruptedException e) { return; }
                 catch (IOException e) { if (!closed) Log.w(TAG, "send: " + e.getMessage()); close(); return; }
             }
@@ -437,6 +483,17 @@ public final class RtspServer {
                 System.arraycopy(frame.data, off, p, 16, chunk);
                 off += chunk;
                 sendRtp(track, p, off == frame.data.length, ts);
+            }
+        }
+
+        private void sendVoice(Track track, Frame frame) throws IOException {
+            int ts = track.timestamp(frame.ptsUs);
+            for (int off = 0; off < frame.data.length;) {
+                int chunk = Math.min(MAX_PAYLOAD, frame.data.length - off);
+                byte[] packet = new byte[12 + chunk];
+                System.arraycopy(frame.data, off, packet, 12, chunk);
+                off += chunk;
+                sendRtp(track, packet, off == frame.data.length, ts);
             }
         }
 

@@ -118,6 +118,7 @@ public final class CameraStreamService extends Service {
     private long fpsWindowStart;
     private int fpsWindowCount;
     private final ByteArrayOutputStream jpegBuffer = new ByteArrayOutputStream(256 * 1024);
+    private long lastStillNs;
 
     /** One immutable settings snapshot; only replaced on the main thread. */
     private static final class OrientationSettings {
@@ -375,6 +376,7 @@ public final class CameraStreamService extends Service {
                 }
             });
             recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
+            recorder.setScheduledWindow(recordingSchedule.limited());
         }
         final RecordingManager sessionRecorder = recorder;
         if (Prefs.needRtsp()) {
@@ -438,6 +440,8 @@ public final class CameraStreamService extends Service {
                     if (sessionRecorder != null) sessionRecorder.onAudio(data, ptsUs, 0);
                 }
                 @Override public void onPcm(short[] pcm, int count, long ptsUs) {
+                    if (sessionRtsp != null && isSessionCurrent(generation))
+                        sessionRtsp.pushPcm(pcm, count, ptsUs);
                     if (isSessionCurrent(generation) && soundDetector != null
                             && soundDetector.update(pcm, count, ptsUs, soundSensitivity))
                         detected(sessionRecorder, "声响", ptsUs, generation);
@@ -506,7 +510,10 @@ public final class CameraStreamService extends Service {
 
     private void processFrame(byte[] nv21, int rawWidth, int rawHeight, long generation) {
         if (!streaming || capture == null || !isSessionCurrent(generation)) return;
-        if (recorder != null) recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
+        if (recorder != null) {
+            recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
+            recorder.setScheduledWindow(recordingSchedule.limited());
+        }
         long now = System.nanoTime();
         if (!framePacer.shouldRun(now)) return;
         try {
@@ -526,10 +533,18 @@ public final class CameraStreamService extends Service {
                 detected(recorder, "画面变动", now / 1000L, generation);
 
             // Remote MJPEG/snapshot always receive the cropped fixed-size output.
+            byte[] jpeg = null;
             if (mjpegServer != null && mjpegServer.isMjpegEnabled()) {
                 if (outputJpegPacer.shouldPublish(now, mjpegServer.hasStreamClients())) {
-                    byte[] jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
+                    jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
                     if (jpeg != null && isSessionCurrent(generation)) mjpegServer.pushJpeg(jpeg);
+                }
+            }
+            if (recorder != null && isSessionCurrent(generation) && now - lastStillNs >= 5_000_000_000L) {
+                if (jpeg == null) jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
+                if (jpeg != null) {
+                    recorder.noteStill(jpeg);
+                    lastStillNs = now;
                 }
             }
 

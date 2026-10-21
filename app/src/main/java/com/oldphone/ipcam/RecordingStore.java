@@ -34,10 +34,10 @@ public final class RecordingStore {
         @Override public String toString() { return label; }
     }
     public static final class Clip {
-        public final String id, reasons;
+        public final String id, reasons, triggers;
         public final File file;
         public final long startTimeMs, durationMs, bytes;
-        public final boolean locked, withAudio;
+        public final boolean locked, withAudio, hasThumbnail;
         Clip(String id, File file, Properties props) throws IOException {
             this.id = id; this.file = file; this.bytes = file.length();
             try {
@@ -47,6 +47,9 @@ public final class RecordingStore {
             locked = Boolean.parseBoolean(props.getProperty("locked"));
             withAudio = Boolean.parseBoolean(props.getProperty("audio"));
             reasons = props.getProperty("events", "");
+            triggers = props.getProperty("triggers", "");
+            File thumb = new File(file.getParentFile(), id + ".jpg");
+            hasThumbnail = Boolean.parseBoolean(props.getProperty("thumbnail")) && thumb.isFile() && thumb.length() > 0;
         }
     }
     static final class Pending {
@@ -194,6 +197,8 @@ public final class RecordingStore {
             disk.requireWritable(root);
             File file = registeredFile(id);
             if (!file.delete()) throw new IOException("无法删除录像");
+            File thumb = managed(id, ".jpg");
+            if (thumb.exists() && !thumb.delete()) throw new IOException("无法删除录像缩略图");
             File metadata = managed(id, ".meta");
             if (metadata.exists() && !metadata.delete()) throw new IOException("无法清理录像索引");
         }
@@ -258,6 +263,33 @@ public final class RecordingStore {
             return new Pending(id, partial, props);
         }
     }
+    void writeThumbnail(Pending pending, byte[] jpeg) throws IOException {
+        if (jpeg == null || jpeg.length < 4 || jpeg.length > 512 * 1024) return;
+        if ((jpeg[0] & 255) != 0xFF || (jpeg[1] & 255) != 0xD8) return;
+        synchronized (FILE_LOCK) {
+            disk.requireWritable(root);
+            File temporary = managed(pending.id, ".jpg.tmp");
+            File dest = managed(pending.id, ".jpg");
+            FileOutputStream out = new FileOutputStream(temporary);
+            try {
+                out.write(jpeg);
+                out.getFD().sync();
+            } finally { out.close(); }
+            if (!temporary.renameTo(dest)) {
+                if (dest.exists() && !dest.delete()) throw new IOException("无法保存缩略图");
+                if (!temporary.renameTo(dest)) throw new IOException("无法保存缩略图");
+            }
+            pending.properties.setProperty("thumbnail", "true");
+        }
+    }
+    File thumbnail(String id) throws IOException {
+        synchronized (FILE_LOCK) {
+            Clip clip = null;
+            for (Clip candidate : listLocked()) if (candidate.id.equals(id)) clip = candidate;
+            if (clip == null || !clip.hasThumbnail) throw new IOException("缩略图不存在");
+            return managed(id, ".jpg");
+        }
+    }
     Clip complete(Pending pending, long durationMs, String reasons) throws IOException {
         synchronized (FILE_LOCK) {
             disk.requireWritable(root);
@@ -295,6 +327,8 @@ public final class RecordingStore {
                 // A rename may have succeeded before complete-index publication
                 // failed. This exact pending id is still registered as partial.
                 removed &= !uncommitted.exists() || uncommitted.delete();
+                File thumb = managed(pending.id, ".jpg");
+                if (thumb.exists()) thumb.delete();
                 if (removed) managed(pending.id, ".meta").delete();
             } catch (IOException ignored) { }
         }

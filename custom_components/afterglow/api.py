@@ -13,6 +13,7 @@ from yarl import URL
 JSON_LIMIT = 2 * 1024 * 1024
 SNAPSHOT_LIMIT = 8 * 1024 * 1024
 CLIP_ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 
 
 class ApiError(Exception):
@@ -139,10 +140,29 @@ class AfterglowApi:
         info["device_id"] = identity
         return info
 
-    async def recordings(self, offset: int = 0, limit: int = 100) -> dict:
+    async def recording_days(self) -> dict:
+        payload = await self._json("/api/recordings/days")
+        try:
+            if not isinstance(payload.get("days"), list):
+                raise ValueError("Invalid day list")
+            for item in payload["days"]:
+                if (not isinstance(item, dict) or not isinstance(item.get("day"), str)
+                        or DAY.fullmatch(item["day"]) is None
+                        or type(item.get("count")) is not int or item["count"] < 0):
+                    raise ValueError("Invalid day")
+        except (KeyError, TypeError, ValueError) as err:
+            raise ApiError("Invalid recordings response") from err
+        return payload
+
+    async def recordings(self, offset: int = 0, limit: int = 100, day: str | None = None) -> dict:
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("Invalid page")
-        page = await self._json("/api/recordings", params={"offset": offset, "limit": limit})
+        params = {"offset": offset, "limit": limit}
+        if day is not None:
+            if not isinstance(day, str) or DAY.fullmatch(day) is None:
+                raise ValueError("Invalid day")
+            params["day"] = day
+        page = await self._json("/api/recordings", params=params)
         try:
             if (type(page["total"]) is not int or page["total"] < 0
                     or page["offset"] != offset or page["limit"] != limit

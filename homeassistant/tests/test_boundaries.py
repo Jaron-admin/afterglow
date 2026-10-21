@@ -59,11 +59,17 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.setup_hass()
         source = await test_http.module("media_source").async_get_media_source(self.hass)
         root = await source.async_browse_media(types.SimpleNamespace(identifier=""))
-        self.assertEqual(root.children[0].identifier, "entry1/page/0")
-        page = await source.async_browse_media(types.SimpleNamespace(identifier="entry1/page/0"))
+        self.assertEqual(root.children[0].identifier, "entry1/days")
+        days = await source.async_browse_media(types.SimpleNamespace(identifier="entry1/days"))
+        self.assertEqual(days.children[0].identifier, "entry1/day/1970-01-01")
+        self.assertIn("201", days.children[0].title)
+        page = await source.async_browse_media(types.SimpleNamespace(identifier="entry1/day/1970-01-01"))
         self.assertEqual(page.children[0].identifier, f"entry1/clip/{test_http.CLIP}")
-        self.assertTrue(page.children[0].title.startswith("1970-01-01 13:00:01"))
-        self.assertEqual(page.children[-1].identifier, "entry1/page/1")
+        self.assertIn("13:00:01", page.children[0].title)
+        self.assertIn("5秒", page.children[0].title)
+        self.assertIn("画面变动", page.children[0].title)
+        self.assertEqual(page.children[0].thumbnail, f"/api/afterglow/recordings/entry1/{test_http.CLIP}/thumbnail")
+        self.assertEqual(page.children[-1].identifier, "entry1/day/1970-01-01/1")
         media = await source.async_resolve_media(types.SimpleNamespace(identifier=f"entry1/clip/{test_http.CLIP}"))
         self.assertEqual(media.url, f"/api/afterglow/recordings/entry1/{test_http.CLIP}")
         self.assertEqual(media.mime_type, "video/mp4")
@@ -81,6 +87,26 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await camera.stream_source())
         self.assertFalse(camera.available)
 
+    async def test_old_phone_without_day_index_still_lists_clips(self):
+        self.setup_hass()
+        self.days_unavailable = True
+        source = await test_http.module("media_source").async_get_media_source(self.hass)
+        page = await source.async_browse_media(types.SimpleNamespace(identifier="entry1/days"))
+        self.assertEqual(page.children[0].identifier, f"entry1/clip/{test_http.CLIP}")
+        self.assertEqual(page.children[-1].identifier, "entry1/page/1")
+
+    async def test_thumbnail_proxy_is_authenticated_and_cached(self):
+        self.setup_hass()
+        proxy = await test_http.HttpTests.make_proxy(self, f"/api/recordings/{test_http.CLIP}/thumbnail",
+            "image/jpeg", "private, max-age=86400")
+        async with self.session.get(proxy.make_url("/clip"),
+                headers={"Authorization": "Bearer ha-secret"}) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), b"\xff\xd8\xff\xd9")
+            self.assertEqual(response.headers["Cache-Control"], "private, max-age=86400")
+        self.assertEqual(self.requests[-1][1]["Authorization"], "Basic dmlld2VyOnNlY3JldA==")
+        self.assertNotIn("Bearer ha-secret", self.requests[-1][1].values())
+
     async def test_unloaded_entry_or_invalid_clip_cannot_be_resolved(self):
         self.setup_hass()
         source = await test_http.module("media_source").async_get_media_source(self.hass)
@@ -97,12 +123,12 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.hass.http = types.SimpleNamespace(views=[], register_view=lambda view: self.hass.http.views.append(view))
         self.assertTrue(await integration.async_setup_entry(self.hass, self.entry))
         self.assertEqual(self.entry.runtime_data.data["device_id"], test_http.DEVICE)
-        self.assertEqual(len(self.hass.http.views), 1)
+        self.assertEqual(len(self.hass.http.views), 2)
         self.assertEqual(self.hass.config_entries.forwarded, ("entry1", ["camera"]))
         self.assertTrue(await integration.async_unload_entry(self.hass, self.entry))
         self.assertIsNone(self.entry.runtime_data)
         self.assertTrue(await integration.async_setup_entry(self.hass, self.entry))
-        self.assertEqual(len(self.hass.http.views), 1)
+        self.assertEqual(len(self.hass.http.views), 2)
 
     async def test_setup_identity_mismatch_never_sends_saved_password(self):
         self.setup_hass()

@@ -38,6 +38,7 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
         self.redirect = False
         self.large = False
         self.recordings_unavailable = False
+        self.days_unavailable = False
 
         async def handler(request):
             self.requests.append((request.path, dict(request.headers), dict(request.query)))
@@ -51,6 +52,10 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
                 return web.json_response({"has_frame": True, "mjpeg_enabled": True, "rtsp_enabled": True})
             if request.path == "/snapshot.jpg":
                 return web.Response(body=b"\xff\xd8\xff\xd9", content_type="image/jpeg")
+            if request.path == "/api/recordings/days":
+                if self.days_unavailable:
+                    raise web.HTTPNotFound()
+                return web.json_response({"days": [{"day": "1970-01-01", "count": 201}]})
             if request.path == "/api/recordings":
                 if self.recordings_unavailable:
                     raise web.HTTPServiceUnavailable()
@@ -58,8 +63,12 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
                     return web.Response(body=b" " * (3 * 1024 * 1024), content_type="application/json")
                 return web.json_response({"recordings": [{"id": CLIP, "start_time_ms": 1000,
                     "duration_ms": 5000, "bytes": 16, "locked": False, "with_audio": True,
-                    "reasons": "motion"}], "offset": int(request.query["offset"]),
+                    "reasons": "motion", "triggers": ["motion"], "thumbnail": True,
+                    "day": "1970-01-01", "local_time": "13:00:01"}],
+                    "offset": int(request.query["offset"]),
                     "limit": int(request.query["limit"]), "total": 201})
+            if request.path == f"/api/recordings/{CLIP}/thumbnail":
+                return web.Response(body=b"\xff\xd8\xff\xd9", content_type="image/jpeg")
             if request.path == f"/api/recordings/{CLIP}":
                 headers = {"Accept-Ranges": "bytes", "ETag": '"clip"'}
                 if request.headers.get("Range") == "bytes=4-7":
@@ -120,10 +129,11 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError, msg=host):
                 self.api_module.AfterglowApi(self.session, host, 8080)
 
-    async def make_proxy(self, path=None, content_type="video/mp4"):
+    async def make_proxy(self, path=None, content_type="video/mp4", cache_control=None):
         streaming = module("streaming")
         async def proxy(request):
-            return await streaming.proxy_stream(request, self.api, path or f"/api/recordings/{CLIP}", content_type)
+            kwargs = {} if cache_control is None else {"cache_control": cache_control}
+            return await streaming.proxy_stream(request, self.api, path or f"/api/recordings/{CLIP}", content_type, **kwargs)
         app = web.Application()
         app.router.add_route("*", "/clip", proxy)
         proxy_server = TestServer(app)

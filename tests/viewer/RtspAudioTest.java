@@ -15,13 +15,14 @@ public final class RtspAudioTest {
     static final byte[] VIDEO = new byte[]{0, 0, 0, 1, 0x61, 11, 22};
     public static void main(String[] args) throws Exception {
         playAcknowledgementAcceptsImmediateFrames();
+        pcmaTrackForWebRtc();
         disabledAudioAndVideoCompatibility();
         tcpTracks(false);
         tcpTracks(true);
         audioOnlyAndPauseResume();
         udpTracks();
         restartDisposesTracks();
-        System.out.println("PASS: PLAY acknowledgement accepts immediate audio/video frames; RTSP audio SDP; both SETUP orders; audio-only/video-only; independent TCP/UDP tracks; AAC AU fragmentation; shared RTCP clock/CNAME; pause/resume; restart disposal");
+        System.out.println("PASS: PLAY acknowledgement accepts immediate audio/video frames; RTSP audio SDP; PCMA track for WebRTC; both SETUP orders; audio-only/video-only; independent TCP/UDP tracks; AAC AU fragmentation; shared RTCP clock/CNAME; pause/resume; restart disposal");
     }
 
     static void playAcknowledgementAcceptsImmediateFrames() throws Exception {
@@ -111,6 +112,25 @@ public final class RtspAudioTest {
     static void audio(RtspServer server, byte[] data, long ptsUs) throws Exception {
         RtspServer.class.getMethod("pushAudio", byte[].class, long.class).invoke(server, data, ptsUs);
     }
+    static void pcmaTrackForWebRtc() throws Exception {
+        check(G711.alaw((short) 0) == (byte) 0xD5, "A-law silence is 0xD5");
+        RtspServer server = server(true);
+        try (Peer p = new Peer(server)) {
+            p.setupTcp(2, 4, 5);
+            p.request("PLAY", "", "");
+            short[] pcm = new short[1280];
+            java.util.Arrays.fill(pcm, (short) 1000);
+            long pts = System.nanoTime() / 1000L;
+            server.pushPcm(pcm, pcm.length, pts);
+            Packet first = p.packet(4);
+            check((first.data[1] & 127) == 8, "PCMA payload type 8");
+            check(first.data.length == 12 + 640, "80 ms at 8 kHz");
+            check(first.data[12] == G711.alaw((short) 1000), "16 kHz PCM downsampled to A-law");
+            server.pushPcm(pcm, pcm.length, pts + 80_000L);
+            Packet second = p.packet(4);
+            check((u32(second.data, 4) - u32(first.data, 4) & 0xffffffffL) == 640, "PCMA timestamp uses the 8 kHz clock");
+        } finally { server.stop(); }
+    }
     static void disabledAudioAndVideoCompatibility() throws Exception {
         RtspServer server = server(false);
         try (Peer p = new Peer(server)) {
@@ -118,6 +138,8 @@ public final class RtspAudioTest {
             check(!p.request("DESCRIBE", "", "").body.contains("m=audio"), "microphone-off SDP must be video-only");
             check(p.request("SETUP", "/trackID=1", "Transport: RTP/AVP/TCP;unicast;interleaved=2-3\r\n").status == 404,
                     "disabled audio track must not SETUP as video");
+            check(p.request("SETUP", "/trackID=2", "Transport: RTP/AVP/TCP;unicast;interleaved=4-5\r\n").status == 404,
+                    "disabled PCMA track is absent with the microphone");
             p.setupTcp(0, 4, 7);
             Response play = p.request("PLAY", "", "");
             check(play.headers.get("rtp-info").contains("/trackID=0"), "video RTP-Info URL");
@@ -134,6 +156,9 @@ public final class RtspAudioTest {
             check(sdp.contains("m=audio 0 RTP/AVP 97\r\n"), "audio payload section");
             check(sdp.contains("MPEG4-GENERIC/16000/1"), "audio sample clock/channels");
             check(sdp.contains("config=1408") && sdp.contains("SizeLength=13") && sdp.contains("IndexLength=3"), "AAC-HBR config");
+            check(sdp.contains("m=audio 0 RTP/AVP 8\r\n") && sdp.contains("a=rtpmap:8 PCMA/8000/1\r\n"), "PCMA track for WebRTC");
+            check(sdp.contains("a=control:trackID=2\r\n"), "PCMA control URL");
+            check(sdp.indexOf("MPEG4-GENERIC/16000/1") < sdp.indexOf("PCMA/8000/1"), "AAC remains the first audio track");
             if (audioFirst) { p.setupTcp(1, 8, 11); p.setupTcp(0, 4, 7); }
             else { p.setupTcp(0, 4, 7); p.setupTcp(1, 8, 11); }
             check(p.request("SETUP", "/trackID=1", "Transport: RTP/AVP/TCP;unicast;interleaved=4-5\r\n").status == 461,

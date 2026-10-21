@@ -1,3 +1,25 @@
+# Validation — HA audio and recording playback
+
+Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12. No phone or Home Assistant frontend was available, so the numbers below are from the unit fixtures, not a live player.
+
+Commands (Linux equivalents of `tests/run.ps1`, which itself calls `javac.exe`):
+
+- JDK 17 `javac`/`java` for the suites in `tests/run.ps1`: network (68), frame pacing, discovery, output, geometry, local preview, lifecycle, detection, audio capture, camera, codec API 19 and 21, viewer (including the node browser test), RTSP audio, and recording. All passed.
+- `python3 -m unittest discover -s homeassistant/tests -v`: 29 tests, OK. The previous 27 still pass; two new cases cover an old phone without the day index, and the authenticated thumbnail proxy.
+- `./gradlew --no-daemon assembleDebug lintDebug`: BUILD SUCCESSFUL, lint report 104 warnings and 0 errors.
+
+First-load measurements from `RecordingPlaybackTest` (printed as `MEASURE` lines):
+
+- MP4 header. Method: build a synthetic file `ftyp + 256 KiB mdat + moov`, then count the bytes that must be read before `moov` is complete. Before faststart: 262236 (the whole file). After `Mp4FastStart`: 84 (`ftyp` + `moov`). The media bytes and the `stco` chunk offset were checked after the move. A second pass leaves the file alone.
+- Recording list. Method: 200 clips across 10 days, compare HTTP body sizes. `GET /api/recordings?offset=0&limit=100` (what the media browser used to request first): 27451 bytes. `GET /api/recordings/days` (the first screen now): 330 bytes.
+
+Device and Home Assistant checks still open:
+
+1. Mic on, confirm the phone or VLC still has sound, then open the HA camera player (not the MJPEG card) and confirm HA has sound too. The picture card / MJPEG path is still silent.
+2. Record a new clip. In HA → Media → Afterglow it should sit under today's date, with a thumbnail, time, duration and a reason (画面变动, 声音触发, or 定时 when a daily window is on). Dragging the progress bar still works.
+3. An older clip without a thumbnail still plays. The camera entity id is unchanged.
+4. 仅本地录像 still has no recording HTTP API.
+
 # Validation — recording settings and external playback
 
 Checked on 2026-10-21 with JDK 21 (RTSP audio rechecked on JDK 17), Android SDK Platform/Build-Tools 36 and Python 3.12.

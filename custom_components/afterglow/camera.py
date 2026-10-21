@@ -53,6 +53,8 @@ class AfterglowCamera(CoordinatorEntity, Camera):
             return None
         if not info.get("rtsp_enabled"):
             return None
+        # MJPEG and the still image have no audio. Sound is on this RTSP URL:
+        # AAC for players that remux it, and PCMA for HA's WebRTC player.
         return str(URL.build(scheme="rtsp", host=self.coordinator.api.host,
             port=info["rtsp_port"], path="/live"))
 
