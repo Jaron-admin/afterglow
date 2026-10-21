@@ -11,6 +11,19 @@ permissions:
   contents: read
 
 jobs:
+  homeassistant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -r homeassistant/tests/requirements.txt
+      - name: Home Assistant integration boundary tests
+        run: python -m unittest discover -s homeassistant/tests -v
+      - name: Compile integration
+        run: python -m compileall -q homeassistant/custom_components/afterglow
   build:
     runs-on: windows-latest
     steps:
