@@ -32,6 +32,16 @@ Afterglow turns an old Android phone into a local camera, with RTSP/H.264 + AAC,
 仅开启对应输出模式时，相应地址才可用。手机之间也可以从「附近设备」进入查看。
 [Home Assistant 接入说明](homeassistant/README.md)。
 
+## 1.4.0 的改动
+
+- 修复帧间隔轻微抖动导致误丢帧的问题，移除本机预览8 fps、MJPEG12 fps的隐藏上限；实际帧率仍取决于设备与网络吞吐。
+- 本机预览使用长边不超过960像素的复用缓冲区，保留完整视野和裁剪遮罩，并在后台处理JPEG，减少对采集、推流的干扰。远端和录像保留选定分辨率、码率。
+- 新增专用 Home Assistant 自定义集成，提供实时摄像头和手机录像的浏览、播放、拖动进度。
+- 保存固定设备身份并广播 DNS-SD；同一局域网内 HA 能按身份更新变化的 IP。数字 IP 本身仍由路由器分配。
+- 录像通过 HA 认证代理读取，沿用现有 Tailscale 即可远程访问，无需直接开放手机端口。
+- RTSP-only 也提供身份/录像 HTTP 接口；「仅本地录像」继续不开放网络服务。只公开当前存储中已完成、已登记的录像，不提供远程删除。
+- 安装和限制见 [HA 接入说明](homeassistant/README.md)。实际手机、HA 和 VPN 环境仍需验收。
+
 ## 1.3.1 的改动
 
 - 修复 RTSP 开始播放确认与首帧入队之间的竞态，补充确定性回归测试。
@@ -114,7 +124,7 @@ Linux/macOS 用 `./gradlew assembleDebug lintDebug`。产物：
 .\build-apk.ps1 -Sdk F:\SDK -Jdk F:\SDK\jdk-17
 ```
 
-输出 `dist/Afterglow-1.3.1.apk`。使用本机已有的 Android debug keystore；
+输出 `dist/Afterglow-1.4.0.apk`。使用本机已有的 Android debug keystore；
 若没有，先运行一次 Gradle debug 构建。签名文件、本机路径和构建目录均被 Git 忽略。
 自己的正式发布应使用自行管理的签名密钥。CI 的 debug APK 与本机 APK 可能使用不同签名，不能互相直接覆盖升级。
 

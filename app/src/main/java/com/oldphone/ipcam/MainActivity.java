@@ -69,6 +69,8 @@ public final class MainActivity extends Activity {
     private TextView tvRtsp;
     private TextView tvMjpeg;
     private TextView tvSnapshot;
+    private TextView tvHttp;
+    private TextView tvHaInfo;
     private Button btnToggle;
     private TextView tvRecordingStatus;
     private TextView tvLastEvent;
@@ -77,6 +79,7 @@ public final class MainActivity extends Activity {
     private View rowRtsp;
     private View rowMjpeg;
     private View rowSnapshot;
+    private View rowHttp;
 
     private CropPreviewView ivPreview;
     private View flPreview;
@@ -134,13 +137,15 @@ public final class MainActivity extends Activity {
     private boolean suppressListener;
 
     // ---- 预览 ----
-    /** 解码线程：JPEG 解码不能放在相机线程，也不能放在 UI 线程 */
+    /** 预览 JPEG 编解码均在独立线程执行。 */
     private HandlerThread decodeThread;
-    private Handler decodeHandler;
+    private volatile Handler decodeHandler;
     /** 上一帧还没解完就丢新帧，避免慢机器上越积越多 */
     private final AtomicBoolean decoding = new AtomicBoolean(false);
-    /** 双缓冲 + inBitmap 复用，避免 8fps 下每秒几 MB 的 GC 压力 */
-    private final JpegFrameDecoder previewDecoder = new JpegFrameDecoder();
+    private final LocalPreviewDecoder previewDecoder = new LocalPreviewDecoder();
+    /** Capture callback owns these only while the single-frame gate is held. */
+    private FrameGeometry previewTransform;
+    private byte[] previewBuffer;
     private volatile boolean hasPreviewFrame;
     private volatile boolean previewActive;
     private volatile long previewEpoch;
@@ -183,51 +188,67 @@ public final class MainActivity extends Activity {
     private final CameraStreamService.PreviewListener previewListener =
             new CameraStreamService.PreviewListener() {
                 @Override
-                public void onPreviewFrame(final PreviewFrame frame) {
+                public void onPreviewFrame(byte[] nv21, final FrameGeometry geometry, final long generation) {
                     final Handler h = decodeHandler;
                     final long epoch = previewEpoch;
-                    if (h == null || !acceptPreview(frame, epoch)
+                    if (h == null || !acceptPreview(geometry, generation, epoch)
                             || !decoding.compareAndSet(false, true)) {
                         return;
                     }
-                    if (!h.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            Bitmap bmp = null;
-                            try {
-                                if (acceptPreview(frame, epoch)) {
-                                    bmp = previewDecoder.decode(frame.jpeg);
-                                }
-                            } catch (Throwable t) {
-                                Log.w("MainActivity", "preview decode failed", t);
-                            }
-                            if (bmp == null) {
-                                decoding.set(false);
-                                return;
-                            }
-                            final Bitmap out = bmp;
-                            // Hold the gate through the UI handoff: the decoder owns both
-                            // reusable bitmaps and must not overwrite one still queued to draw.
-                            if (!handler.post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    try {
-                                        if (acceptPreview(frame, epoch) && !isFinishing()) {
-                                            showPreviewFrame(out, frame);
-                                        }
-                                    } finally {
-                                        decoding.set(false);
-                                    }
-                                }
-                            })) {
-                                decoding.set(false);
-                            }
+                    boolean queued = false;
+                    try {
+                        if (!acceptPreview(geometry, generation, epoch)) {
+                            return;
                         }
-                    })) {
-                        decoding.set(false);
+                        if (previewTransform == null || previewTransform.revision != geometry.revision
+                                || previewTransform.rawWidth != geometry.rawWidth
+                                || previewTransform.rawHeight != geometry.rawHeight
+                                || previewTransform.rotation != geometry.rotation) {
+                            previewTransform = FrameGeometry.preview(geometry.rawWidth, geometry.rawHeight,
+                                    geometry.rotation, 960, geometry.revision);
+                        }
+                        int bytes = previewTransform.outputWidth * previewTransform.outputHeight * 3 / 2;
+                        if (previewBuffer == null || previewBuffer.length != bytes) previewBuffer = new byte[bytes];
+                        // Camera owns nv21. Finish scaling/copying before this callback returns.
+                        Nv21Transform.render(nv21, previewTransform, previewBuffer);
+                        final PreviewFrame frame = new PreviewFrame(previewBuffer,
+                                previewTransform.outputWidth, previewTransform.outputHeight, geometry, generation);
+                        queued = h.post(new Runnable() {
+                            @Override public void run() { decodePreview(frame, epoch); }
+                        });
+                    } catch (Throwable failure) {
+                        Log.w("MainActivity", "preview transform or handoff failed", failure);
+                    } finally {
+                        if (!queued) decoding.set(false);
                     }
                 }
             };
+
+    private void decodePreview(final PreviewFrame frame, final long epoch) {
+        boolean handedToUi = false;
+        try {
+            if (!acceptPreview(frame.geometry, frame.generation, epoch)) return;
+            final Bitmap bitmap = previewDecoder.decode(frame);
+            if (bitmap == null) return;
+            // Keep both NV21 and bitmap ownership until the UI accepts or discards the frame.
+            handedToUi = handler.post(new Runnable() {
+                @Override public void run() {
+                    try {
+                        if (acceptPreview(frame.geometry, frame.generation, epoch) && !isFinishing()) {
+                            showPreviewFrame(bitmap, frame);
+                            previewDecoder.presented(bitmap);
+                        }
+                    } finally {
+                        decoding.set(false);
+                    }
+                }
+            });
+        } catch (Throwable failure) {
+            Log.w("MainActivity", "preview decode or UI handoff failed", failure);
+        } finally {
+            if (!handedToUi) decoding.set(false);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -342,7 +363,7 @@ public final class MainActivity extends Activity {
         refreshUi();
         handler.removeCallbacks(refresher);
         handler.post(refresher);
-        // 只有界面在前台时才让服务压缩预览帧，退到后台立刻停止，省 CPU
+        // 只有界面在前台时才接收预览帧，退到后台立刻停止，省 CPU。
         CameraStreamService.setPreviewListener(previewListener);
 
         // 首次进入自动扫一次，之后交给「重新扫描」按钮，避免每次切回都扫全网段
@@ -401,6 +422,9 @@ public final class MainActivity extends Activity {
         rowRtsp = findViewById(R.id.rowRtsp);
         rowMjpeg = findViewById(R.id.rowMjpeg);
         rowSnapshot = findViewById(R.id.rowSnapshot);
+        rowHttp = findViewById(R.id.rowHttp);
+        tvHttp = (TextView) findViewById(R.id.tvHttp);
+        tvHaInfo = (TextView) findViewById(R.id.tvHaInfo);
 
         ivPreview = (CropPreviewView) findViewById(R.id.ivPreview);
         flPreview = findViewById(R.id.flPreview);
@@ -1055,6 +1079,9 @@ public final class MainActivity extends Activity {
         rowRtsp.setOnClickListener(copyRtsp);
         rowMjpeg.setOnClickListener(copyMjpeg);
         rowSnapshot.setOnClickListener(copySnapshot);
+        rowHttp.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { copy(tvHttp.getText().toString()); }
+        });
 
         btnRescan.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -1114,13 +1141,25 @@ public final class MainActivity extends Activity {
         llDevices.addView(row);
     }
 
-    private void openViewer(LanScanner.Device device) {
+    private void openViewer(final LanScanner.Device device) {
+        if (device.httpAuthRequired && !device.rtspOnly) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.viewer_http_auth_title)
+                    .setMessage(R.string.viewer_http_auth_hint)
+                    .setPositiveButton(R.string.copy_http_address, new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface dialog, int which) {
+                            copy(String.format(Locale.US, "http://%s:%d/", device.ip, device.httpPort));
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null).show();
+            return;
+        }
         Intent intent = new Intent(this, ViewerActivity.class);
         intent.putExtra(ViewerActivity.EXTRA_IP, device.ip);
         intent.putExtra(ViewerActivity.EXTRA_LABEL, device.detail());
         intent.putExtra(ViewerActivity.EXTRA_RTSP_ONLY, device.rtspOnly);
-        intent.putExtra(ViewerActivity.EXTRA_HTTP_PORT, CameraStreamService.HTTP_PORT);
-        intent.putExtra(ViewerActivity.EXTRA_RTSP_PORT, CameraStreamService.RTSP_PORT);
+        intent.putExtra(ViewerActivity.EXTRA_HTTP_PORT, device.httpPort);
+        intent.putExtra(ViewerActivity.EXTRA_RTSP_PORT, device.rtspPort);
         intent.putExtra(EXTRA_UI_SHOT, shotRequested);
         try {
             startActivity(intent);
@@ -1344,7 +1383,7 @@ public final class MainActivity extends Activity {
             tvDetail.setText(error);
         } else if (running) {
             String detail = String.format(Locale.US,
-                    "%s · %d×%d · %d fps",
+                    "%s · %d×%d · 处理 %d fps",
                     CameraStreamService.cameraLabel,
                     CameraStreamService.videoWidth, CameraStreamService.videoHeight,
                     CameraStreamService.measuredFps);
@@ -1379,14 +1418,14 @@ public final class MainActivity extends Activity {
         refreshAddresses();
     }
 
-    private boolean acceptPreview(PreviewFrame frame, long epoch) {
+    private boolean acceptPreview(FrameGeometry geometry, long generation, long epoch) {
         FrameGeometry latest = CameraStreamService.frameGeometry;
         return previewActive && epoch == previewEpoch && CameraStreamService.running
                 && !CameraStreamService.reconfiguring
-                && frame.generation != rejectedPreviewGeneration
-                && frame.generation == CameraStreamService.streamGeneration
-                && frame.geometry != null && latest != null
-                && frame.geometry.revision == latest.revision;
+                && generation != rejectedPreviewGeneration
+                && generation == CameraStreamService.streamGeneration
+                && geometry != null && latest != null
+                && geometry.revision == latest.revision;
     }
 
     private void resetPreview() {
@@ -1436,7 +1475,20 @@ public final class MainActivity extends Activity {
 
     private void refreshAddresses() {
         boolean rtsp = Prefs.needRtsp(), mjpeg = Prefs.needMjpeg();
-        String ip = rtsp || mjpeg ? NetUtils.localIp() : "";
+        boolean network = rtsp || mjpeg;
+        String ip = network ? NetUtils.localIp() : "";
+        rowHttp.setEnabled(network);
+        rowHttp.setAlpha(network ? 1f : 0.5f);
+        tvHttp.setText(network ? String.format(Locale.US, "http://%s:%d/", ip,
+                CameraStreamService.HTTP_PORT) : getString(R.string.address_disabled));
+        if (network) {
+            String name;
+            try { name = Prefs.deviceName(); }
+            catch (IllegalStateException unavailable) { name = getString(R.string.ha_identity_unavailable); }
+            tvHaInfo.setText(getString(R.string.ha_setup_hint, name));
+        } else {
+            tvHaInfo.setText(R.string.ha_local_only);
+        }
         rowRtsp.setEnabled(rtsp);
         rowMjpeg.setEnabled(mjpeg);
         rowSnapshot.setEnabled(mjpeg);

@@ -76,7 +76,14 @@
     <string name="copied">已复制到剪贴板</string>
     <string name="status_switching">正在切换…</string>
     <string name="address_disabled">未启用</string>
+    <string name="addr_http">HTTP</string>
+    <string name="ha_setup_hint">HA 设备：%1$s\n开启摄像头后，在 Home Assistant 安装 Afterglow 集成，并从“设备与服务”添加。自动发现需要 HA 与手机在同一局域网；手动添加时可使用 HTTP 地址。</string>
+    <string name="ha_identity_unavailable">设备身份暂不可用</string>
+    <string name="ha_local_only">仅本地录像：不提供网络访问或 Home Assistant 发现。</string>
+    <string name="viewer_http_auth_title">此设备需要 HTTP 验证</string>
+    <string name="viewer_http_auth_hint">手机内的预览暂不支持输入 HTTP 用户名和密码。可在浏览器打开 HTTP 地址后登录，或在 Home Assistant 中配置访问凭据。</string>
+    <string name="copy_http_address">复制 HTTP 地址</string>
     <string name="help_title">帮助</string>
-    <string name="help_body">将手机与查看设备连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC、Home Assistant 等使用，MJPEG 可用浏览器查看。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。MJPEG 访问验证在输入完成或离开输入框后生效。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n在 Home Assistant 安装 Afterglow 集成后，从“设备与服务”添加本机显示的 HA 设备。集成会按设备身份更新变化的 IP，HTTP 地址也可用于手动添加。原有通用摄像头条目不会自动迁移。HTTP 身份与录像服务在 RTSP 模式下仍可用，MJPEG 与快照只在启用 MJPEG 时提供。外出时可通过 Tailscale 访问家里的 HA；自动发现仍由家中局域网完成。卸载或清除应用数据会重置设备身份。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
 </resources>

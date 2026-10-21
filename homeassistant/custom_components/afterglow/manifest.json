@@ -1,0 +1,14 @@
+{
+  "domain": "afterglow",
+  "name": "Afterglow",
+  "codeowners": ["@Jaron-admin"],
+  "config_flow": true,
+  "dependencies": ["media_source", "stream"],
+  "documentation": "https://github.com/Jaron-admin/afterglow/tree/main/homeassistant",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Jaron-admin/afterglow/issues",
+  "requirements": [],
+  "version": "1.0.0",
+  "zeroconf": ["_afterglow._tcp.local."]
+}

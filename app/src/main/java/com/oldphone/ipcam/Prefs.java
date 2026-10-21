@@ -3,12 +3,15 @@ package com.oldphone.ipcam;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.UUID;
+
 /**
  * 极简配置存储。全部走 SharedPreferences，避免引入任何第三方依赖。
  */
 public final class Prefs {
 
     private static final String FILE = "ipcam_prefs";
+    private static final String KEY_DEVICE_ID = "device_id";
 
     public static final String KEY_RES = "res_index";
     public static final String KEY_FPS = "fps";
@@ -107,7 +110,7 @@ public final class Prefs {
     private Prefs() {
     }
 
-    public static void init(Context ctx) {
+    public static synchronized void init(Context ctx) {
         if (sp == null) {
             sp = ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
         }
@@ -148,6 +151,29 @@ public final class Prefs {
     }
 
     // ---- 便捷读取 ----
+
+    /** Installation identity, independent of DHCP addresses, stream settings and restarts. */
+    public static synchronized String deviceId() {
+        if (p() == null) throw new IllegalStateException("Prefs.init must run before device discovery");
+        String stored = p().getString(KEY_DEVICE_ID, null);
+        if (stored != null) {
+            try {
+                if (UUID.fromString(stored).toString().equals(stored)) return stored;
+            } catch (IllegalArgumentException ignored) { }
+        }
+        String id = UUID.randomUUID().toString();
+        // Publishing an apply() write could expose an identity lost by immediate power loss.
+        if (!p().edit().putString(KEY_DEVICE_ID, id).commit()) {
+            // SharedPreferences changes its memory map even when the disk write fails.
+            p().edit().remove(KEY_DEVICE_ID).apply();
+            throw new IllegalStateException("Unable to persist device identity");
+        }
+        return id;
+    }
+
+    public static String deviceName() {
+        return "Afterglow-" + deviceId().substring(0, 8);
+    }
 
     public static int resIndex() {
         int i = getInt(KEY_RES, 0);

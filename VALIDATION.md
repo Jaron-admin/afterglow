@@ -1,4 +1,76 @@
-# Validation — Afterglow 1.3.1
+# Validation — Afterglow 1.4.0
+
+Checked on 2026-10-21 with JDK17, Android SDK Platform/Build-Tools36, Gradle8.13 and Python3.12.
+
+- The complete `tests/run.ps1` suite passed, including new persistent device identity,
+  pending/stale DNS-SD registration callbacks, public capability discovery and protected
+  viewer fallback. Real HTTP socket tests cover Basic auth, public nonsecret identity,
+  RTSP-only capability isolation, read-only clip paths, pagination/JSON escaping,
+  inclusive/open/suffix byte ranges, HEAD, If-Range, unavailable/deleted recordings and stop.
+- `python -m unittest discover -s homeassistant/tests -v`: 23 tests passed, using real
+  aiohttp peers and HA framework boundary doubles. Includes address reuse before polling:
+  changed/unavailable identity blocks every new credentialed request and RTSP source.
+  These tests do not run HA's auth middleware, frontend or real Zeroconf stack.
+- Gradle `assembleDebug lintDebug` succeeded; final `lintDebug` has 0 errors and 100
+  warnings. Baseline2683340 had 100 warnings on this toolchain. An additional guarded
+  API21 `TargetApi` annotation uses the same no-AndroidX pattern as existing code;
+  the cached dependency-version warning is absent. No blanket suppression was added.
+- `build-apk.ps1` produces version1.4.0/code7, package `com.oldphone.ipcam`, min19/target33;
+  v1/v2/v3 signature verification passed. The local debug certificate is
+  `749cb6ed850f0ac415ffd34d4fdee7ced400730619344cc6ba9134168e8fd7e4`, which differs from
+  the certificate recorded below for1.3.1. Treat this APK as a test build until the
+  installed app certificate is checked; it cannot overwrite an app signed with the old
+  recorded certificate. Do not uninstall an existing app merely to bypass this conflict:
+  app-private recordings would be removed.
+- Source review found a saved-credential path after IP reuse. The central API now binds
+  the expected UUID and rechecks public identity before each new protected request;
+  regression tests exercise list, snapshot, status and media proxy paths.
+
+## Performance regression evidence
+
+- Synthetic60-second timing traces use the production FramePacer: 15fps input with
+  ±2ms jitter accepted600 frames with the old gate and900 with the fix; 30→15fps
+  accepted601 vs900. This is deterministic scheduling evidence, not measured phone FPS.
+- A second independently anchored15fps MJPEG gate reproduced450 published frames
+  from900 accepted captures. Active MJPEG now follows every accepted capture; only
+  idle snapshots use a2-second timer. Client-join jitter and idle/active transitions
+  have regression coverage. Real socket tests also confirm that idle requests,
+  unauthorized video and recording reads do not request continuous JPEG production.
+- Local preview keeps original crop metadata, uses a reusable ≤960-edge NV21 buffer,
+  and moves JPEG encoding and decoding off the capture worker. Tests cover exact
+  rotated/downscaled luma/chroma, JPEG length/capacity reuse, compression failure and
+  protecting the displayed bitmap when newer decoded frames are discarded.
+- For1920×1080 capture, local-preview NV21 storage is777,600 bytes instead of3,110,400
+  bytes:75% smaller for this buffer. This is allocation arithmetic, not total app RAM.
+- Expanded YUV tests cover direct/heap/read-only buffers, padding, nonzero positions,
+  marks and truncated planes. Codec simulations on API19/21 verify that releasing
+  completed output before input acquisition avoids dropping the next frame.
+- Optional desktop JDK17 converter benchmark (7×160 frames, warmed, alternating order)
+  measured median scalar→bulk luma conversion:720p heap1,944→657µs, padded direct720p
+  1,505→573µs, padded direct1080p3,348→1,275µs. A duplicate view adds56–64 bytes/frame on
+  that JVM; no second full-frame buffer. These values do not establish Android CPU
+  usage, battery life, temperature, end-to-end latency or hardware camera throughput.
+- After all performance edits, the complete `tests/run.ps1` suite and23 HA boundary
+  tests passed again. Gradle `assembleDebug lintDebug` passed (0 errors,100 warnings),
+  and the190,955-byte manual APK verified with the certificate recorded above.
+  Independent review found and resolved the double-pacing issue; no further concrete
+  P1/P2 findings remained. The UI FPS label explicitly describes processing throughput.
+
+## Device/HA acceptance still required
+
+1. Check the installed APK signature and preserve existing recordings before upgrading.
+2. Install the custom integration in the target HA version; browse and seek a real MP4.
+3. Confirm unauthenticated HA proxy access is rejected and signed media URLs expire.
+4. Change the phone DHCP address on the same multicast LAN; keep the same device/entity
+   and verify automatic recovery. Confirm manual reconfiguration on isolated networks.
+5. Play over the user's Tailscale route; test RTSP-only, MJPEG-only, protected HTTP,
+   SD removal, stop/restart, local-only isolation and Android19 NSD on actual hardware.
+6. At the same light level, lens, resolution and bitrate, compare selected15fps local
+   preview, VLC RTSP and MJPEG separately; repeat with preview hidden and recording
+   on/off. Sample actual FPS, CPU/RAM and temperature over at least10 minutes. Low-light
+   exposure, hardware encoding limits and congestion can still reduce delivered FPS.
+
+# Previous validation — Afterglow 1.3.1
 
 Checked on 2026-10-20 with JDK 17 and Android SDK Platform / Build-Tools 36.
 

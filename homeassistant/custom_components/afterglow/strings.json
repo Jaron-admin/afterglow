@@ -1,0 +1,34 @@
+{
+  "title": "Afterglow",
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect an Afterglow phone",
+        "description": "Enter the phone's LAN hostname or IP, or paste its HTTP base address. A port in the pasted address takes priority. HTTP credentials are optional when disabled on the phone.",
+        "data": {"host": "Host or HTTP address", "port": "HTTP port", "username": "HTTP username", "password": "HTTP password"}
+      },
+      "reconfigure": {
+        "title": "Update connection",
+        "description": "The address must identify the same Afterglow installation.",
+        "data": {"host": "Host", "port": "HTTP port", "username": "HTTP username", "password": "HTTP password"}
+      },
+      "reauth_confirm": {
+        "title": "Update phone credentials",
+        "description": "Use the HTTP access credentials configured on the phone.",
+        "data": {"host": "Host", "port": "HTTP port", "username": "HTTP username", "password": "HTTP password"}
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to a compatible Afterglow API. Check the address, running service and network.",
+      "invalid_auth": "The phone rejected the HTTP username or password.",
+      "wrong_device": "This address belongs to a different Afterglow installation."
+    },
+    "abort": {
+      "already_configured": "This phone is already configured. Its connection information was refreshed if needed.",
+      "cannot_connect": "The discovered phone could not be verified.",
+      "reauth_successful": "Phone credentials updated.",
+      "reconfigure_successful": "Connection updated."
+    }
+  }
+}

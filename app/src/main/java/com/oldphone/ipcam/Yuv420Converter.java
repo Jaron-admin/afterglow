@@ -21,9 +21,20 @@ public final class Yuv420Converter {
         validate(v, width / 2, height / 2, vRowStride, vPixelStride);
         int offset = 0;
         int base = y.position();
-        for (int row = 0; row < height; row++) {
-            int start = base + row * yRowStride;
-            for (int col = 0; col < width; col++) out[offset++] = y.get(start + col * yPixelStride);
+        if (yPixelStride == 1) {
+            // Bulk reads avoid a Java/direct-buffer call for every luma pixel.
+            // Only the duplicate moves; padding and the original position stay intact.
+            ByteBuffer rows = y.duplicate();
+            for (int row = 0; row < height; row++) {
+                rows.position(base + row * yRowStride);
+                rows.get(out, offset, width);
+                offset += width;
+            }
+        } else {
+            for (int row = 0; row < height; row++) {
+                int start = base + row * yRowStride;
+                for (int col = 0; col < width; col++) out[offset++] = y.get(start + col * yPixelStride);
+            }
         }
         int uBase = u.position(), vBase = v.position();
         for (int row = 0; row < height / 2; row++) {

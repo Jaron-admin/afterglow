@@ -506,6 +506,30 @@
                                 android:text="@string/section_address_hint" />
                         </LinearLayout>
                         <LinearLayout
+                            android:id="@+id/rowHttp"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="?android:attr/selectableItemBackground"
+                            android:focusable="true">
+                            <TextView
+                                android:layout_width="52dp"
+                                android:layout_height="wrap_content"
+                                android:text="@string/addr_http"
+                                android:textColor="@color/on_surface_variant"
+                                android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/tvHttp"
+                                style="@style/Text.Mono"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:ellipsize="middle"
+                                android:singleLine="true" />
+                        </LinearLayout>
+                        <LinearLayout
                             android:id="@+id/rowRtsp"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -577,6 +601,13 @@
                                 android:ellipsize="middle"
                                 android:singleLine="true" />
                         </LinearLayout>
+                        <TextView
+                            android:id="@+id/tvHaInfo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textColor="@color/on_surface_variant"
+                            android:textSize="12sp" />
                     </LinearLayout>
                     <LinearLayout
                         style="@style/Card">

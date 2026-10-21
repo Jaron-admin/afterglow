@@ -41,9 +41,27 @@ public final class MjpegServer {
     private volatile String streamId;
 
     private volatile String authHeader;
+    private volatile String deviceInfo;
+    private volatile boolean mjpegEnabled = true;
+    private volatile boolean rtspEnabled;
+    private volatile RecordingHttpApi recordings = new RecordingHttpApi(null);
 
     public MjpegServer(int port) {
         this.port = port;
+    }
+
+    public void setDeviceInfo(String id, String name, boolean rtsp, boolean mjpeg) {
+        mjpegEnabled = mjpeg;
+        rtspEnabled = rtsp;
+        deviceInfo = "{\"api_version\":1,\"device_id\":" + RecordingHttpApi.quote(id)
+                + ",\"name\":" + RecordingHttpApi.quote(name) + ",\"http_port\":" + port
+                + ",\"rtsp_port\":8554,\"rtsp_enabled\":" + rtsp + ",\"mjpeg_enabled\":" + mjpeg
+                + ",\"recordings_enabled\":true}";
+    }
+
+    public void setRecordings(RecordingHttpApi api) {
+        if (api == null) throw new IllegalArgumentException("Recording API required");
+        recordings = api;
     }
 
     public void setBasicAuth(String user, String pass) {
@@ -61,6 +79,17 @@ public final class MjpegServer {
     public boolean hasClients() {
         return !clients.isEmpty();
     }
+
+    /** Only accepted live streams need continuous JPEG production, not other HTTP requests. */
+    public boolean hasStreamClients() {
+        if (!running) return false;
+        for (Client client : clients) {
+            if (client.streaming && !client.closed) return true;
+        }
+        return false;
+    }
+
+    public boolean isMjpegEnabled() { return mjpegEnabled; }
 
     public int clientCount() {
         return clients.size();
@@ -156,6 +185,7 @@ public final class MjpegServer {
 
         private final Socket socket;
         private volatile boolean closed;
+        private volatile boolean streaming;
 
         Client(Socket socket) {
             this.socket = socket;
@@ -172,15 +202,39 @@ public final class MjpegServer {
                     return;
                 }
                 String[] parts = requestLine.split(" ");
-                String path = parts.length >= 2 ? parts[1] : "/";
+                if (parts.length != 3) return;
+                String method = parts[0];
+                String target = parts[1];
+                String path = target;
 
                 String auth = null;
+                String range = null, ifRange = null;
+                int headerBytes = requestLine.length(), headerCount = 0;
                 String line;
                 while ((line = readLine(in)) != null && !line.isEmpty()) {
+                    headerBytes += line.length();
+                    if (++headerCount > 64 || headerBytes > 32768) return;
                     int c = line.indexOf(':');
-                    if (c > 0 && "authorization".equalsIgnoreCase(line.substring(0, c).trim())) {
-                        auth = line.substring(c + 1).trim();
+                    if (c > 0) {
+                        String key = line.substring(0, c).trim(), value = line.substring(c + 1).trim();
+                        if ("authorization".equalsIgnoreCase(key)) auth = value;
+                        else if ("range".equalsIgnoreCase(key)) range = range == null ? value : range + "," + value;
+                        else if ("if-range".equalsIgnoreCase(key)) ifRange = value;
                     }
+                }
+                if (line == null) return;
+                int q = path.indexOf('?');
+                if (q >= 0) path = path.substring(0, q);
+                boolean head = "HEAD".equals(method);
+                // Minimal public identity is required before HA can safely reuse credentials
+                // after discovery. No recording, credential or filesystem data is public here.
+                if ("/api/info".equals(path) && ("GET".equals(method) || head)) {
+                    String info = deviceInfo;
+                    if (info != null) info = info.substring(0, info.length() - 1)
+                            + ",\"http_auth_required\":" + (authHeader != null) + "}";
+                    RecordingHttpApi.send(out, info == null ? "503 Service Unavailable" : "200 OK",
+                            "application/json; charset=utf-8", info == null ? "{}" : info, head, "");
+                    return;
                 }
 
                 if (authHeader != null && !authHeader.equals(auth)) {
@@ -189,23 +243,28 @@ public final class MjpegServer {
                             "WWW-Authenticate: Basic realm=\"Afterglow\"\r\n"
                                     + "Content-Type: text/plain\r\n"
                                     + "Content-Length: " + body.length + "\r\n");
-                    out.write(body);
+                    if (!head) out.write(body);
                     out.flush();
                     return;
                 }
 
-                int q = path.indexOf('?');
-                if (q >= 0) {
-                    path = path.substring(0, q);
+                if (path.equals("/api/recordings") || path.startsWith("/api/recordings/")) {
+                    recordings.serve(method, target, range, ifRange, out);
+                    return;
+                }
+                if (!"GET".equals(method)) {
+                    RecordingHttpApi.send(out, "405 Method Not Allowed", "text/plain", "Method not allowed", head,
+                            "Allow: GET\r\n");
+                    return;
                 }
 
                 if ("/".equals(path) || "/index.html".equals(path)) {
                     serveIndex(out);
-                } else if (path.startsWith("/video") || path.startsWith("/stream")) {
+                } else if (mjpegEnabled && (path.equals("/video") || path.equals("/stream"))) {
                     serveStream(out);
-                } else if (path.startsWith("/snapshot")) {
+                } else if (mjpegEnabled && path.equals("/snapshot.jpg")) {
                     serveSnapshot(out);
-                } else if (path.startsWith("/status")) {
+                } else if (path.equals("/status")) {
                     serveStatus(out);
                 } else {
                     byte[] body = "Not Found".getBytes("UTF-8");
@@ -225,6 +284,14 @@ public final class MjpegServer {
 
         private void serveIndex(OutputStream out) throws IOException {
             String host = NetUtils.localIp();
+            if (!mjpegEnabled) {
+                RecordingHttpApi.send(out, "200 OK", "text/html; charset=utf-8",
+                        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
+                        + "<title>余光 · Afterglow</title><h1>余光 · Afterglow</h1>"
+                        + "<p>当前为 RTSP 模式，请通过 Home Assistant 或 RTSP 播放器观看。</p>"
+                        + "<p>安装 Afterglow 集成后，可在 Home Assistant 的媒体中浏览录像。</p>", false, "");
+                return;
+            }
             String html = "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
                     + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                     + "<title>余光 · Afterglow</title>"
@@ -293,11 +360,12 @@ public final class MjpegServer {
         private void serveStatus(OutputStream out) throws IOException {
             String json = String.format(Locale.US,
                     "{\"running\":true,\"http_clients\":%d,\"frames\":%d,\"has_frame\":%b,\"stream_id\":\"%s\","
-                            + "\"camera\":\"%s\",\"orientation\":%d,\"width\":%d,\"height\":%d}",
+                            + "\"camera\":%s,\"orientation\":%d,\"width\":%d,\"height\":%d,"
+                            + "\"mjpeg_enabled\":%b,\"rtsp_enabled\":%b}",
                     clients.size(), frameSeq, latestJpeg != null, streamId,
-                    CameraStreamService.cameraLabel,
+                    RecordingHttpApi.quote(CameraStreamService.cameraLabel),
                     CameraStreamService.sensorOrientation,
-                    CameraStreamService.videoWidth, CameraStreamService.videoHeight);
+                    CameraStreamService.videoWidth, CameraStreamService.videoHeight, mjpegEnabled, rtspEnabled);
             byte[] body = json.getBytes("UTF-8");
             writeHead(out, "200 OK",
                     "Content-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: " + body.length + "\r\n");
@@ -306,6 +374,9 @@ public final class MjpegServer {
         }
 
         private void serveStream(OutputStream out) throws IOException, InterruptedException {
+            // This route is reached only after method, mode and authentication checks.
+            // Publish demand before headers, so the first JPEG can be produced immediately.
+            streaming = true;
             writeHead(out, "200 OK",
                     "Content-Type: multipart/x-mixed-replace; boundary=" + BOUNDARY + "\r\n"
                             + "Cache-Control: no-store, no-cache, must-revalidate\r\n"
@@ -350,6 +421,7 @@ public final class MjpegServer {
         }
 
         void close() {
+            streaming = false;
             if (closed) {
                 return;
             }

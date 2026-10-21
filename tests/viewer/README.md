@@ -10,6 +10,8 @@ The Java tests compile the production MJPEG server/client and RTSP server, and c
 
 The suite checks that invalid HTTP authentication changes retain the previous protection, and that partial RTSP handshakes expire and all control sockets close across 40 start/stop cycles. It takes about ten seconds because it exercises the real handshake inactivity timeout.
 
+`MjpegDemandTest` uses real HTTP sockets to distinguish authenticated `/video` and `/stream` requests from idle/incomplete HTTP, rejected video requests, and an authenticated recording request held at the storage boundary. Live demand is present before the first JPEG, clears on stop, and does not survive restart. The general HTTP client counts still include non-stream requests. This test was observed failing with the former all-HTTP demand behavior before the stream flag was implemented.
+
 The server's actual HTML and initial status response are saved under `app/build/viewer-tests`. Node executes that HTML's script with controlled browser events, image state, XHR responses and timers, verifying disconnect/restart recovery and cancellation on page exit. It does not assert on source text.
 
 These checks do not run Android activities, decode pixels, or exercise a real browser's multipart image renderer. Physical-device testing is still needed for Android lifecycle behavior and MediaPlayer RTSP handling.

@@ -8,11 +8,31 @@ import java.util.List;
 public final class EncoderLifecycleTest {
     public static void main(String[] args) throws Exception {
         delayedFramesDrainBeforeRelease();
+        pendingOutputDoesNotDropNextInput();
         listenerFailureReleasesNativeBuffer();
         outputAcquisitionFailureReleasesNativeBuffer();
         eosTimeoutIsVisibleAndStillReleases();
         System.out.println("PASS EncoderLifecycleTest API " + Build.VERSION.SDK_INT
-                + ": delayed output/EOS, callback failure, buffer acquisition failure, timeout cleanup");
+                + ": delayed output/EOS, output backpressure, callback failure, buffer acquisition failure, timeout cleanup");
+    }
+
+    private static void pendingOutputDoesNotDropNextInput() throws Exception {
+        MediaCodec.reset();
+        MediaCodec.blockInputUntilOutputReleased = true;
+        MediaCodec.delayUntilEos = true;
+        Probe probe = new Probe();
+        H264Encoder encoder = new H264Encoder();
+        encoder.start(4, 4, 15, 100000, probe);
+        try {
+            encoder.encode(new byte[24], 1000000);
+            // Hardware finishes the first frame between capture callbacks. Until its
+            // output is released, this bounded codec cannot accept the second input.
+            MediaCodec.delayUntilEos = false;
+            encoder.encode(new byte[24], 1066666);
+            check(probe.frames.size() == 2 && probe.frames.get(0) == 1000000L
+                    && probe.frames.get(1) == 1066666L,
+                    "ready output must be released before submitting the next camera frame");
+        } finally { encoder.stop(); }
     }
     private static void delayedFramesDrainBeforeRelease() throws Exception {
         MediaCodec.reset();

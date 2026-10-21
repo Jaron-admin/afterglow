@@ -10,18 +10,19 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 局域网扫描：找出同网段里其它正在推流的「旧手机监控」实例。
  *
  * 判定方式刻意做成「协议指纹」而不是 UDP 广播：
- *   - 先打 HTTP 8080 的 /status，返回体里必须同时出现 "has_frame" 与 "running"；
+ *   - 优先访问 HTTP 8080 的公共 /api/info，以设备身份和能力判断观看方式；
+ *   - 旧版本回退 /status，返回体里必须同时出现 "has_frame" 与 "running"；
  *   - 打不通再试 RTSP 8554 的 OPTIONS，看 Server 头是不是 "OldPhoneCam"。
- * 这样不需要组播权限，也不怕路由器禁广播，代价是要逐个 IP 试。
+ * 这种扫描不依赖组播，代价是要逐个 IP 试；Home Assistant 另用 DNS-SD 自动发现。
  *
  * 扫描范围固定为「本机 IP 所在的 /24」。家用网络基本都是 /24，
  * 扫 /16 是 65534 个地址，手机上不现实。
@@ -39,7 +40,12 @@ public final class LanScanner {
     /** 扫描结果 */
     public static final class Device {
         public String ip;
-        /** 只开了 RTSP、没有 HTTP 的情况 */
+        public String deviceId = "";
+        public String name = "";
+        public int httpPort = HTTP_PORT;
+        public int rtspPort = RTSP_PORT;
+        public boolean httpAuthRequired;
+        /** 仅可通过 RTSP 观看（HTTP 身份/录像服务可以仍然开启） */
         public boolean rtspOnly;
         public boolean running;
         public String camera = "";
@@ -48,10 +54,17 @@ public final class LanScanner {
 
         public String detail() {
             if (rtspOnly) {
-                return "仅 RTSP · rtsp://" + ip + ":" + RTSP_PORT + "/live";
+                return (name.length() > 0 ? name + " · " : "")
+                        + "仅 RTSP · rtsp://" + ip + ":" + rtspPort + "/live";
             }
             StringBuilder sb = new StringBuilder();
+            if (name.length() > 0) sb.append(name);
+            if (httpAuthRequired) {
+                if (sb.length() > 0) sb.append(" · ");
+                sb.append("HTTP 访问需验证");
+            }
             if (camera != null && camera.length() > 0) {
+                if (sb.length() > 0) sb.append(" · ");
                 sb.append(camera);
             }
             if (width > 0 && height > 0) {
@@ -97,7 +110,7 @@ public final class LanScanner {
                 @Override
                 public void run() {
                     try {
-                        Device d = probeHttp(ip);
+                        Device d = probeHttp(ip, HTTP_PORT);
                         if (d == null) {
                             d = probeRtsp(ip);
                         }
@@ -143,28 +156,67 @@ public final class LanScanner {
 
     // ------------------------------------------------------------------
 
-    private static Device probeHttp(String ip) {
+    static Device probeHttp(String ip, int port) {
+        String info = requestHttp(ip, port, "/api/info");
+        if (info != null && jsonInt(info, "api_version") == 1) {
+            String id = jsonString(info, "device_id");
+            Boolean rtsp = jsonBool(info, "rtsp_enabled");
+            Boolean mjpeg = jsonBool(info, "mjpeg_enabled");
+            int httpPort = jsonInt(info, "http_port"), rtspPort = jsonInt(info, "rtsp_port");
+            boolean validId = false;
+            try { validId = UUID.fromString(id).toString().equals(id); }
+            catch (IllegalArgumentException ignored) { }
+            if (validId && rtsp != null && mjpeg != null && validPort(httpPort) && validPort(rtspPort)) {
+                if (!rtsp && !mjpeg) return null;
+                Device device = new Device();
+                device.ip = ip;
+                device.deviceId = id;
+                device.name = jsonString(info, "name");
+                device.httpPort = httpPort;
+                device.rtspPort = rtspPort;
+                device.httpAuthRequired = Boolean.TRUE.equals(jsonBool(info, "http_auth_required"));
+                // The built-in viewer has no HTTP login UI; preserve the legacy RTSP fallback.
+                device.rtspOnly = rtsp && (!mjpeg || device.httpAuthRequired);
+                device.running = true;
+                return device;
+            }
+        }
+        String status = requestHttp(ip, port, "/status");
+        if (status == null || jsonBool(status, "has_frame") == null || jsonBool(status, "running") == null)
+            return null;
+        Boolean rtsp = jsonBool(status, "rtsp_enabled"), mjpeg = jsonBool(status, "mjpeg_enabled");
+        if (Boolean.FALSE.equals(mjpeg) && !Boolean.TRUE.equals(rtsp)) return null;
+        Device device = new Device();
+        device.ip = ip;
+        device.httpPort = port;
+        device.rtspOnly = Boolean.FALSE.equals(mjpeg) && Boolean.TRUE.equals(rtsp);
+        device.running = Boolean.TRUE.equals(jsonBool(status, "running"));
+        device.camera = jsonString(status, "camera");
+        device.width = jsonInt(status, "width");
+        device.height = jsonInt(status, "height");
+        return device;
+    }
+
+    private static boolean validPort(int port) { return port > 0 && port <= 65535; }
+
+    private static String requestHttp(String ip, int port, String path) {
         Socket s = new Socket();
         try {
-            s.connect(new InetSocketAddress(ip, HTTP_PORT), CONNECT_TIMEOUT_MS);
+            s.connect(new InetSocketAddress(ip, port), CONNECT_TIMEOUT_MS);
             s.setSoTimeout(READ_TIMEOUT_MS);
             OutputStream out = s.getOutputStream();
-            out.write(("GET /status HTTP/1.1\r\nHost: " + ip + "\r\n"
+            out.write(("GET " + path + " HTTP/1.1\r\nHost: " + ip + ":" + port + "\r\n"
                     + "Connection: close\r\n\r\n").getBytes("UTF-8"));
             out.flush();
 
             String resp = readAll(s.getInputStream(), 4096);
-            // 必须同时有这两个键，避免把别的 8080 服务误判成自己
-            if (resp == null || !resp.contains("has_frame") || !resp.contains("running")) {
-                return null;
-            }
-            Device d = new Device();
-            d.ip = ip;
-            d.running = resp.contains("\"running\":true");
-            d.camera = jsonString(resp, "camera");
-            d.width = jsonInt(resp, "width");
-            d.height = jsonInt(resp, "height");
-            return d;
+            // Discovery is public: never attach credentials or follow redirects.
+            if (resp == null || resp.length() >= 4096
+                    || !(resp.startsWith("HTTP/1.1 200 ") || resp.startsWith("HTTP/1.0 200 "))) return null;
+            int separator = resp.indexOf("\r\n\r\n");
+            if (separator < 0) return null;
+            String body = resp.substring(separator + 4).trim();
+            return body.startsWith("{") && body.endsWith("}") ? body : null;
         } catch (Throwable t) {
             return null;
         } finally {
@@ -203,7 +255,7 @@ public final class LanScanner {
             ByteArrayOutputStream buf = new ByteArrayOutputStream(512);
             byte[] tmp = new byte[512];
             while (buf.size() < limit) {
-                int n = in.read(tmp);
+                int n = in.read(tmp, 0, Math.min(tmp.length, limit - buf.size()));
                 if (n <= 0) {
                     break;
                 }
@@ -216,23 +268,16 @@ public final class LanScanner {
     }
 
     private static String jsonString(String json, String key) {
-        String k = "\"" + key + "\":\"";
-        int i = json.indexOf(k);
-        if (i < 0) {
-            return "";
-        }
-        int start = i + k.length();
+        int start = jsonValueStart(json, key);
+        if (start < 0 || start >= json.length() || json.charAt(start) != '"') return "";
+        start++;
         int end = json.indexOf('"', start);
         return end > start ? json.substring(start, end) : "";
     }
 
     private static int jsonInt(String json, String key) {
-        String k = "\"" + key + "\":";
-        int i = json.indexOf(k);
-        if (i < 0) {
-            return 0;
-        }
-        int start = i + k.length();
+        int start = jsonValueStart(json, key);
+        if (start < 0) return 0;
         int end = start;
         while (end < json.length() && Character.isDigit(json.charAt(end))) {
             end++;
@@ -245,6 +290,30 @@ public final class LanScanner {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    private static Boolean jsonBool(String json, String key) {
+        int start = jsonValueStart(json, key);
+        if (start < 0) return null;
+        if (json.startsWith("true", start) && jsonValueEnd(json, start + 4)) return Boolean.TRUE;
+        if (json.startsWith("false", start) && jsonValueEnd(json, start + 5)) return Boolean.FALSE;
+        return null;
+    }
+
+    private static boolean jsonValueEnd(String json, int position) {
+        return position == json.length() || json.charAt(position) == ',' || json.charAt(position) == '}'
+                || Character.isWhitespace(json.charAt(position));
+    }
+
+    private static int jsonValueStart(String json, String key) {
+        String quoted = "\"" + key + "\"";
+        int start = json.indexOf(quoted);
+        if (start < 0) return -1;
+        start += quoted.length();
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        if (start == json.length() || json.charAt(start++) != ':') return -1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        return start;
     }
 
     private static void closeQuietly(Socket s) {
