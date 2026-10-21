@@ -97,6 +97,7 @@ public final class CameraStreamService extends Service {
     private AudioCapture audioCapture;
     private MotionDetector motionDetector;
     private int detectionSensitivity;
+    private RecordingSchedule recordingSchedule = RecordingSchedule.allDay();
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
 
@@ -354,7 +355,8 @@ public final class CameraStreamService extends Service {
         final boolean microphone = Prefs.microphoneEnabled();
         final boolean detectSound = Prefs.soundEnabled();
         detectionSensitivity = Prefs.sensitivity();
-        final int sensitivity = detectionSensitivity;
+        final int soundSensitivity = Prefs.soundSensitivity();
+        recordingSchedule = Prefs.recordingSchedule();
         final SoundDetector soundDetector = detectSound ? new SoundDetector() : null;
         motionDetector = Prefs.motionEnabled() ? new MotionDetector() : null;
         recordingFailed = false;
@@ -372,6 +374,7 @@ public final class CameraStreamService extends Service {
                     }
                 }
             });
+            recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
         }
         final RecordingManager sessionRecorder = recorder;
         if (Prefs.needRtsp()) {
@@ -436,7 +439,7 @@ public final class CameraStreamService extends Service {
                 }
                 @Override public void onPcm(short[] pcm, int count, long ptsUs) {
                     if (isSessionCurrent(generation) && soundDetector != null
-                            && soundDetector.update(pcm, count, ptsUs, sensitivity))
+                            && soundDetector.update(pcm, count, ptsUs, soundSensitivity))
                         detected(sessionRecorder, "声响", ptsUs, generation);
                 }
                 @Override public void onError(String message) {
@@ -503,6 +506,7 @@ public final class CameraStreamService extends Service {
 
     private void processFrame(byte[] nv21, int rawWidth, int rawHeight, long generation) {
         if (!streaming || capture == null || !isSessionCurrent(generation)) return;
+        if (recorder != null) recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
         long now = System.nanoTime();
         if (!framePacer.shouldRun(now)) return;
         try {

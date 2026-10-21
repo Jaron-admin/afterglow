@@ -109,12 +109,21 @@ public final class RtspServer {
         for (Client client : clients) client.offer(frame);
     }
 
-    public synchronized void stop() {
-        running = false;
-        for (Client client : clients) client.close();
-        clients.clear();
-        try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) { }
-        serverSocket = null;
+    public void stop() {
+        Thread accept;
+        synchronized (this) {
+            running = false;
+            for (Client client : clients) client.close();
+            clients.clear();
+            accept = acceptThread;
+            try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) { }
+            serverSocket = null;
+        }
+        // Let accept() leave the old socket before the next start() binds the same port.
+        if (accept != null && Thread.currentThread() != accept) {
+            try { accept.join(1000); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        }
         Log.i(TAG, "RTSP stopped");
     }
 

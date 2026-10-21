@@ -23,7 +23,7 @@ public final class RecordingManager implements AutoCloseable {
     private final Listener listener;
     private final RecordingWorkQueue queue = new RecordingWorkQueue(QUEUE_BYTES, 512);
     private final Thread worker;
-    private volatile boolean closing, failed;
+    private volatile boolean closing, failed, armed = true;
     private volatile String lastStatus = "正在准备录像";
     private RecordingStore store;
     private RecordingTimeline timeline;
@@ -63,6 +63,16 @@ public final class RecordingManager implements AutoCloseable {
     }
     public boolean hasFailed() { return failed; }
     public String status() { return lastStatus; }
+    public void setArmed(final boolean value) {
+        if (armed == value || closing || failed) return;
+        armed = value;
+        offer(new RecordingWorkQueue.Work() {
+            public void run() throws IOException {
+                if (timeline != null) timeline.setArmed(value);
+                refreshScheduleStatus();
+            }
+        }, 0);
+    }
     public void trigger(final String reason, final long ptsUs) {
         if (reason == null) return;
         offer(new RecordingWorkQueue.Work() {
@@ -82,6 +92,7 @@ public final class RecordingManager implements AutoCloseable {
                         && (videoFormat == null || (options.withAudio && audioFormat == null)))
                     throw new IOException("等待编码音视频格式超时，录像已暂停");
                 timeline.accept(new RecordingTimeline.Sample(video, owned, ptsUs, flags));
+                refreshScheduleStatus();
             }
         }, owned.length);
     }
@@ -192,6 +203,12 @@ public final class RecordingManager implements AutoCloseable {
         if (store != null && pending != null) store.discard(pending);
         pending = null;
     }
+    private void refreshScheduleStatus() {
+        if (failed || timeline == null || timeline.isActive()) return;
+        status(timeline.isArmed()
+                ? (options.mode == MODE_EVENT ? "事件录像待命" : "等待视频关键帧")
+                : "未到录像时间");
+    }
     private synchronized void fail(String message) {
         if (failed) return;
         failed = true;
@@ -200,7 +217,8 @@ public final class RecordingManager implements AutoCloseable {
         if (listener != null) try { listener.onStatus(message, true); } catch (RuntimeException ignored) { }
     }
     private synchronized void status(String message) {
-        if (!failed) lastStatus = message;
+        if (failed || message.equals(lastStatus)) return;
+        lastStatus = message;
         if (!failed && listener != null)
             try { listener.onStatus(message, false); } catch (RuntimeException ignored) { }
     }

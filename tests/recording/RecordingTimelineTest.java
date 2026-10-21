@@ -127,6 +127,64 @@ public final class RecordingTimelineTest {
         eventTail.accept(frame(11, false));
         check(eventTailSink.ends == 1 && eventTailSink.segmentMarks.get(0).contains("sound-tail@9500000"),
                 "event expiration publishes the valid final audio-tail marker");
-        System.out.println("RecordingTimelineTest PASS: keyframes, shared PTS, merged events, segmentation, bounded pre-roll");
+
+        Sink blocked = new Sink();
+        RecordingTimeline blockedTimeline = new RecordingTimeline(false, 4096, blocked);
+        blockedTimeline.setReady();
+        blockedTimeline.setArmed(false);
+        blockedTimeline.accept(frame(0, true));
+        blockedTimeline.accept(frame(2, true));
+        check(blocked.starts.isEmpty(), "continuous recording stays idle outside the window");
+
+        Sink window = new Sink();
+        RecordingTimeline windowed = new RecordingTimeline(false, 4096, 0, 15_000_000,
+                3_600_000_000L, 1024 * 1024, window);
+        windowed.setReady();
+        windowed.accept(frame(0, true));
+        windowed.accept(frame(1, false));
+        windowed.setArmed(false);
+        windowed.accept(frame(2, false));
+        check(window.ends == 0 && window.video.size() == 3,
+                "outside the window the open segment continues until a keyframe");
+        windowed.accept(frame(4, true));
+        check(window.ends == 1 && window.starts.size() == 1 && window.video.size() == 3,
+                "the next keyframe finishes the segment and is not written into it");
+        windowed.accept(frame(6, true));
+        windowed.accept(frame(8, false));
+        check(window.starts.size() == 1 && window.video.size() == 3,
+                "a closed window does not open another segment");
+        windowed.setArmed(true);
+        windowed.accept(frame(10, true));
+        check(window.starts.size() == 2 && window.starts.get(1) == 10_000_000L,
+                "re-entering the window starts at the next keyframe");
+
+        Sink outside = new Sink();
+        RecordingTimeline outsideEvent = new RecordingTimeline(true, 4096, 0, 15_000_000,
+                3_600_000_000L, 1024 * 1024, outside);
+        outsideEvent.setReady();
+        outsideEvent.setArmed(false);
+        outsideEvent.accept(frame(0, true));
+        outsideEvent.trigger("motion", 0);
+        outsideEvent.accept(frame(2, true));
+        check(outside.starts.isEmpty(), "events outside the window do not start a clip");
+
+        Sink mid = new Sink();
+        RecordingTimeline midEvent = new RecordingTimeline(true, 4096, 0, 30_000_000,
+                3_600_000_000L, 1024 * 1024, mid);
+        midEvent.setReady();
+        midEvent.accept(frame(0, true));
+        midEvent.accept(frame(1, false));
+        midEvent.trigger("motion", 1_000_000);
+        midEvent.accept(frame(2, true));
+        check(mid.starts.size() == 1, "event starts while the window is open");
+        midEvent.setArmed(false);
+        midEvent.accept(frame(3, false));
+        midEvent.accept(frame(4, true));
+        check(mid.ends == 1 && mid.starts.size() == 1,
+                "leaving the window finishes the event at the next keyframe");
+        midEvent.accept(frame(20, true));
+        check(mid.starts.size() == 1 && mid.ends == 1,
+                "post-roll does not continue after the window has closed");
+        System.out.println("RecordingTimelineTest PASS: keyframes, shared PTS, merged events, segmentation, bounded pre-roll, schedule window");
     }
 }

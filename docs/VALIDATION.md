@@ -1,4 +1,22 @@
-# Validation — Afterglow 1.4.2
+# Validation — recording settings and external playback
+
+Checked on 2026-10-21 with JDK 21 (RTSP audio rechecked on JDK 17), Android SDK Platform/Build-Tools 36 and Python 3.12.
+
+- The same JVM suites listed in `tests/run.ps1` were run on Linux. `tests/run.ps1` itself calls `javac.exe` and is the Windows CI entry; it was not executed on this machine.
+- New checks cover the daily window (including overnight and equal start/end), preset versus 自定义 values, sound-sensitivity fallback, content URI segment encoding, and timeline behavior: idle outside the window, finish the open segment on the next keyframe, and start again only after the window opens.
+- `python -m unittest discover -s homeassistant/tests -v`: all 27 tests passed. Home Assistant media browsing was not modified.
+- Gradle `assembleDebug lintDebug`: successful, 0 errors and 104 warnings.
+- No phone, player app, or Home Assistant frontend was exercised. The manual checks below are still open.
+
+Device checks for this change:
+
+1. Upgrade over an existing install. Custom segment length, quota, pre/post-roll and retention that are not on a preset must still show as 自定义 and keep the old number. Sound sensitivity must match the previous single sensitivity until it is changed.
+2. All-day continuous recording behaves as before. With a daily window, live view and RTSP/MJPEG keep running outside the window. The active clip ends on the next keyframe (about one second at the current encoder interval) and no new clip opens until the window starts again.
+3. Event mode does not start a clip outside the window. A clip already running ends at the next keyframe instead of using the full post-roll.
+4. The recordings list has no in-app player. 用其他应用打开 plays in another app. 分享 sends the file. 导出, 锁定 and 删除 still work. With no video app installed, the chooser or the export prompt appears, and Android 7+ does not crash on a file URI.
+5. Home Assistant → Media → Afterglow still lists and seeks completed clips while the phone is streaming. 仅本地录像 still has no recording HTTP API.
+
+# Previous validation — Afterglow 1.4.2
 
 Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12.
 

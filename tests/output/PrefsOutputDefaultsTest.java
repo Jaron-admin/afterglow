@@ -37,6 +37,23 @@ public final class PrefsOutputDefaultsTest {
         if (Prefs.recordingOptions().withAudio)
             throw new AssertionError("RTSP microphone may stay on while recorded audio is disabled");
         memory.values.clear();
+        memory.values.put(Prefs.KEY_SENSITIVITY, 0);
+        if (Prefs.soundSensitivity() != 0)
+            throw new AssertionError("unset sound sensitivity keeps the current motion level");
+        memory.values.put(Prefs.KEY_SOUND_SENSITIVITY, 2);
+        if (Prefs.soundSensitivity() != 2 || Prefs.sensitivity() != 0)
+            throw new AssertionError("sound sensitivity is stored separately from motion");
+        if (Prefs.recordingSchedule().limited())
+            throw new AssertionError("missing schedule stays all day");
+        memory.values.put(Prefs.KEY_SCHEDULE, true);
+        memory.values.put(Prefs.KEY_SCHEDULE_START, 22 * 60);
+        memory.values.put(Prefs.KEY_SCHEDULE_END, 7 * 60);
+        if (!Prefs.recordingSchedule().allows(23 * 60) || Prefs.recordingSchedule().allows(12 * 60))
+            throw new AssertionError("saved daily window is kept");
+        memory.values.put(Prefs.KEY_SCHEDULE_END, 22 * 60);
+        if (Prefs.recordingSchedule().limited())
+            throw new AssertionError("equal start and end falls back to all day");
+        memory.values.clear();
         Prefs.setOutputSize(640, 480);
         size(640, 480, "saved 1.2 output remains unchanged");
         field.set(null, null);

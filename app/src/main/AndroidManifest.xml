@@ -65,6 +65,12 @@
         <activity android:name=".RecordingsActivity" android:exported="false"
             android:screenOrientation="fullSensor" android:label="本地录像" />
 
+        <provider
+            android:name=".RecordingFileProvider"
+            android:authorities="com.oldphone.ipcam.recordings"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

@@ -2,9 +2,10 @@ package com.oldphone.ipcam;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.DialogInterface;
-import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
@@ -13,11 +14,9 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.MediaController;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -31,7 +30,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Local-only playback and user-directed document export, including Android 4.4. */
+/** Recording list with export, lock, delete, and handoff to another app. */
 public final class RecordingsActivity extends Activity {
     private static final int EXPORT = 53;
     private final ExecutorService disk = Executors.newSingleThreadExecutor();
@@ -43,7 +42,6 @@ public final class RecordingsActivity extends Activity {
     private String selectedTarget = "", exportTarget, exportId;
     private int generation;
     private boolean destroyed;
-    private VideoView playing;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -159,12 +157,13 @@ public final class RecordingsActivity extends Activity {
     }
     private void actions(final String target, final RecordingStore.Clip clip) {
         new AlertDialog.Builder(this).setTitle("录像")
-                .setItems(new String[] {"播放", "导出", clip.locked ? "解除锁定" : "锁定", "删除"},
+                .setItems(new String[] {"用其他应用打开", "分享", "导出", clip.locked ? "解除锁定" : "锁定", "删除"},
                         new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface dialog, int which) {
-                            if (which == 0) play(target, clip.id);
-                            else if (which == 1) export(target, clip);
-                            else if (which == 2) mutate(target, clip.id, !clip.locked, false);
+                            if (which == 0) handoff(target, clip.id, false);
+                            else if (which == 1) handoff(target, clip.id, true);
+                            else if (which == 2) export(target, clip);
+                            else if (which == 3) mutate(target, clip.id, !clip.locked, false);
                             else new AlertDialog.Builder(RecordingsActivity.this).setTitle("删除这段录像？")
                                     .setMessage(clip.locked ? "这段录像已锁定。删除后无法恢复。" : "删除后无法恢复。")
                                     .setNegativeButton("取消", null)
@@ -187,41 +186,25 @@ public final class RecordingsActivity extends Activity {
             }
         });
     }
-    private void play(final String target, final String id) {
-        disk.execute(new Runnable() {
-            public void run() {
-                try {
-                    final File file = RecordingStore.open(getApplicationContext(), target, RecordingStore.DEFAULT_QUOTA)
-                            .registeredFile(id);
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            if (destroyed) return;
-                            final VideoView video = new VideoView(RecordingsActivity.this);
-                            playing = video;
-                            MediaController controls = new MediaController(RecordingsActivity.this);
-                            controls.setAnchorView(video); video.setMediaController(controls);
-                            AlertDialog dialog = new AlertDialog.Builder(RecordingsActivity.this)
-                                    .setTitle("本地播放").setView(video).setPositiveButton("关闭", null).create();
-                            dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
-                                public void onDismiss(DialogInterface d) {
-                                    video.stopPlayback(); if (playing == video) playing = null;
-                                }
-                            });
-                            video.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-                                public boolean onError(MediaPlayer player, int what, int extra) {
-                                    Toast.makeText(RecordingsActivity.this, "无法播放此片段，可导出后尝试其他播放器", Toast.LENGTH_LONG).show();
-                                    return true;
-                                }
-                            });
-                            dialog.show();
-                            video.getLayoutParams().height = dp(320);
-                            video.requestLayout();
-                            video.setVideoPath(file.getPath()); video.start();
-                        }
-                    });
-                } catch (Exception e) { showError(e); }
-            }
-        });
+    private void handoff(String target, String id, boolean share) {
+        try {
+            Uri uri = RecordingFileProvider.uriFor(target, id);
+            Intent intent = new Intent(share ? Intent.ACTION_SEND : Intent.ACTION_VIEW);
+            if (share) {
+                intent.setType("video/mp4");
+                intent.putExtra(Intent.EXTRA_STREAM, uri);
+            } else intent.setDataAndType(uri, "video/mp4");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.setClipData(ClipData.newUri(getContentResolver(), "recording", uri));
+            Intent chooser = Intent.createChooser(intent, share ? "分享录像" : "用其他应用打开");
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            chooser.setClipData(intent.getClipData());
+            startActivity(chooser);
+        } catch (ActivityNotFoundException missing) {
+            Toast.makeText(this, "没有可以打开视频的应用，请先导出", Toast.LENGTH_LONG).show();
+        } catch (IllegalArgumentException invalid) {
+            Toast.makeText(this, "没有可以打开视频的应用，请先导出", Toast.LENGTH_LONG).show();
+        }
     }
     private void export(String target, RecordingStore.Clip clip) {
         exportTarget = target; exportId = clip.id;
@@ -279,13 +262,8 @@ public final class RecordingsActivity extends Activity {
         super.onSaveInstanceState(state);
         state.putString("target", selectedTarget); state.putString("exportTarget", exportTarget); state.putString("exportId", exportId);
     }
-    @Override protected void onPause() {
-        super.onPause();
-        if (playing != null) playing.pause();
-    }
     @Override protected void onDestroy() {
         destroyed = true; generation++;
-        if (playing != null) playing.stopPlayback();
         disk.shutdown();
         super.onDestroy();
     }

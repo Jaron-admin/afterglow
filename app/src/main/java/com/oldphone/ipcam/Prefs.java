@@ -38,6 +38,10 @@ public final class Prefs {
     public static final String KEY_SEGMENT_SIZE = "recording_segment_mib";
     public static final String KEY_LOOP = "recording_loop";
     public static final String KEY_RECORD_AUDIO = "recording_audio";
+    public static final String KEY_SOUND_SENSITIVITY = "sound_sensitivity";
+    public static final String KEY_SCHEDULE = "recording_schedule";
+    public static final String KEY_SCHEDULE_START = "recording_schedule_start";
+    public static final String KEY_SCHEDULE_END = "recording_schedule_end";
     private static final String KEY_CAMERA_KEY = "camera_key_v2";
     private static final String KEY_OUTPUT_WIDTH = "output_width";
     private static final String KEY_OUTPUT_HEIGHT = "output_height";
@@ -310,7 +314,20 @@ public final class Prefs {
         return microphoneEnabled() && getBool(KEY_SOUND, false);
     }
     public static int sensitivity() {
-        return Math.max(0, Math.min(2, getInt(KEY_SENSITIVITY, 1)));
+        return DetectionLevels.clamp(getInt(KEY_SENSITIVITY, 1));
+    }
+    /** A missing sound level keeps the current motion sensitivity. */
+    public static int soundSensitivity() {
+        boolean hasOwn = p() != null && p().contains(KEY_SOUND_SENSITIVITY);
+        return DetectionLevels.soundOrMotion(hasOwn, getInt(KEY_SOUND_SENSITIVITY, sensitivity()), sensitivity());
+    }
+    public static RecordingSchedule recordingSchedule() {
+        if (!getBool(KEY_SCHEDULE, false)) return RecordingSchedule.allDay();
+        try {
+            return RecordingSchedule.daily(getInt(KEY_SCHEDULE_START, 0), getInt(KEY_SCHEDULE_END, 0));
+        } catch (IllegalArgumentException invalid) {
+            return RecordingSchedule.allDay();
+        }
     }
     public static String recordingTarget() { return getStr(KEY_STORAGE, ""); }
     public static long recordingQuota() {
