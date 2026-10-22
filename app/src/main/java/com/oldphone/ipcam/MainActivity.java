@@ -890,10 +890,14 @@ public final class MainActivity extends Activity {
 
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
+        if (v22 != null) v22.applyOrientation();
         arrangePanes();
     }
 
     private void arrangePanes() {
+        // The v2.2 screens own the layout once they are attached; this only keeps the
+        // hidden legacy tree consistent for the panels adopted into 高级设置.
+        if (v22 != null) return;
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
         llBody.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         svMain.setLayoutParams(new LinearLayout.LayoutParams(
@@ -1784,7 +1788,7 @@ public final class MainActivity extends Activity {
         ivPreview.setFrame(bmp, frame.geometry);
         ivPreview.setVisibility(View.VISIBLE);
         llPreviewEmpty.setVisibility(View.GONE);
-        if (v22 != null) v22.setPreview(bmp);
+        if (v22 != null) v22.setPreview(bmp, frame.geometry);
     }
 
 

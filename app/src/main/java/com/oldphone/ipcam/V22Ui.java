@@ -57,7 +57,16 @@ final class V22Ui {
     private int paintedRotation = -1;
     private ScrollView streamScroll;
     private ScrollView homeScroll;
+    private FrameLayout homeOverlay;
+    private final int[] menuFrame = new int[2];
+    private final int[] menuOverlay = new int[2];
     private FrameLayout previewFrame;
+    private FrameLayout miniFrame;
+    /** Aspect of the full oriented frame; the preview card follows it instead of a fixed 16:9. */
+    private int frameWidth = 16;
+    private int frameHeight = 9;
+    private Split homeSplit;
+    private Split streamSplit;
     private int streamPushTop;
     private boolean resMenu;
     private boolean wantStream;
@@ -140,6 +149,126 @@ final class V22Ui {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         advanced.setVisibility(View.GONE);
         showStream(wantStream);
+        applyOrientation();
+    }
+
+    /**
+     * Portrait stacks the picture over its settings, the way the handoff does. Landscape
+     * puts the picture on the left and the settings on the right, which is what the pre-2.2
+     * layout did on wide screens and what the camera wants: you watch the frame while you
+     * change a setting.
+     */
+    void applyOrientation() {
+        arrange(homeSplit);
+        arrange(streamSplit);
+    }
+
+    private void arrange(Split split) {
+        if (split == null) return;
+        boolean wide = landscape();
+        int viewport = split.host == null ? 0 : split.host.getHeight();
+        if (split.wide == wide && split.page.getChildCount() > 0) {
+            split.fit(viewport);
+            split.picture.requestLayout();
+            return;
+        }
+        split.wide = wide;
+        split.page.removeAllViews();
+        split.wideRow.removeAllViews();
+        split.picturePane.removeAllViews();
+        detach(split.rest);
+        detach(split.side);
+        if (wide) {
+            if (split.lead != null) split.picturePane.addView(split.lead, fillWidth());
+            split.picturePane.addView(split.picture, fillWidth());
+            split.side.addView(split.rest,
+                    new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+            split.wideRow.addView(split.picturePane, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1.15f));
+            split.wideRow.addView(split.side, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+            split.page.addView(split.wideRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            if (split.lead != null) split.page.addView(split.lead, fillWidth());
+            split.page.addView(split.picture, fillWidth());
+            split.page.addView(split.rest, fillWidth());
+        }
+        split.fit(viewport);
+        split.picture.requestLayout();
+    }
+
+    private LinearLayout.LayoutParams fillWidth() {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void detach(View view) {
+        if (view == null) return;
+        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+    }
+
+    /**
+     * Landscape has to fill the viewport exactly: the outer scroll must not move, or the
+     * picture would slide away while the settings column is being read.
+     */
+    private void setPageHeight(LinearLayout page, int height) {
+        ViewGroup.LayoutParams lp = page.getLayoutParams();
+        if (lp == null) {
+            page.setLayoutParams(new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, height));
+            return;
+        }
+        if (lp.width == ViewGroup.LayoutParams.MATCH_PARENT && lp.height == height) return;
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        lp.height = height;
+        page.setLayoutParams(lp);
+    }
+
+    /** One screen's picture and the settings that belong to it. */
+    private final class Split {
+        final LinearLayout page;
+        final View lead;
+        final View picture;
+        final LinearLayout rest;
+        final ScrollView host;
+        final LinearLayout wideRow;
+        final LinearLayout picturePane;
+        final ScrollView side;
+        boolean wide;
+
+        Split(LinearLayout page, View lead, View picture, LinearLayout rest) {
+            this.page = page;
+            this.lead = lead;
+            this.picture = picture;
+            this.rest = rest;
+            host = page.getParent() instanceof ScrollView ? (ScrollView) page.getParent() : null;
+            wideRow = row();
+            wideRow.setClipChildren(false);
+            wideRow.setClipToPadding(false);
+            picturePane = column();
+            picturePane.setClipChildren(false);
+            side = scroll();
+            side.setFillViewport(false);
+            side.setPadding(dp(16), 0, 0, 0);
+            if (host != null) {
+                host.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                    @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                         int ol, int ot, int or, int ob) {
+                        if (r - l != or - ol || b - t != ob - ot) fit(b - t);
+                    }
+                });
+            }
+        }
+
+        void fit(int viewportHeight) {
+            if (!wide) {
+                setPageHeight(page, ViewGroup.LayoutParams.WRAP_CONTENT);
+                return;
+            }
+            if (viewportHeight > 0) setPageHeight(page, viewportHeight);
+        }
     }
 
     void showStream(boolean show) {
@@ -151,6 +280,27 @@ final class V22Ui {
     }
 
     boolean showingStream() { return wantStream; }
+
+    /**
+     * A live frame plus the transform it was produced from. The transform drives two things
+     * the plain bitmap cannot express: the card takes the frame's own aspect ratio so the
+     * whole sensor view fits without cropping, and the band the encoder discards is dimmed.
+     */
+    void setPreview(Bitmap bitmap, FrameGeometry geometry) {
+        if (geometry != null) {
+            int width = Math.max(1, geometry.fullWidth);
+            int height = Math.max(1, geometry.fullHeight);
+            if (width != frameWidth || height != frameHeight) {
+                frameWidth = width;
+                frameHeight = height;
+                reheight(previewFrame, homeScroll);
+                reheight(miniFrame, streamScroll);
+            }
+            if (previewImage != null) previewImage.setMask(geometry);
+            if (miniImage != null) miniImage.setMask(geometry);
+        }
+        setPreview(bitmap);
+    }
 
     void setPreview(Bitmap bitmap) {
         if (bitmap == null) return;
@@ -340,29 +490,31 @@ final class V22Ui {
         homeScroll = scroll;
         LinearLayout page = page();
         scroll.addView(page);
-        page.addView(header());
+        View head = header();
         FrameLayout preview = preview(false);
         previewFrame = preview;
-        page.addView(preview);
-        page.addView(lensSegment());
-        page.addView(stats());
+        LinearLayout rest = column();
+        rest.addView(lensSegment());
+        rest.addView(stats());
         View streamControl = bigButton();
         streamFace.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22ToggleStream(); }
         });
-        page.addView(streamControl);
+        rest.addView(streamControl);
         pauseNote = caption("");
         pauseNote.setGravity(Gravity.CENTER);
-        page.addView(gap(pauseNote, 0, 8, 0, 0));
-        page.addView(gap(soundCard(), 0, 12, 0, 0));
-        page.addView(section("功能"));
-        page.addView(entries());
-        page.addView(gap(advancedEntry(), 0, 12, 0, 0));
+        rest.addView(gap(pauseNote, 0, 8, 0, 0));
+        rest.addView(gap(soundCard(), 0, 12, 0, 0));
+        rest.addView(section("功能"));
+        rest.addView(entries());
+        rest.addView(gap(advancedEntry(), 0, 12, 0, 0));
+        homeSplit = new Split(page, head, preview, rest);
         FrameLayout overlay = new FrameLayout(activity);
         overlay.setClipChildren(false);
         overlay.setClipToPadding(false);
         overlay.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        homeOverlay = overlay;
         if (resMenuView != null && resMenuView.getParent() == null) {
             FrameLayout.LayoutParams menuLp = new FrameLayout.LayoutParams(
                     dp(196), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
@@ -380,12 +532,19 @@ final class V22Ui {
         return overlay;
     }
 
+    /**
+     * Anchors the resolution menu under the preview's top-right corner. Measured in window
+     * space so the same code works whether the picture sits under the header or beside it.
+     */
     private void positionResolutionMenu() {
-        if (resMenuView == null || previewFrame == null || homeScroll == null) return;
+        if (resMenuView == null || previewFrame == null || homeScroll == null || homeOverlay == null) return;
         if (!(resMenuView.getLayoutParams() instanceof FrameLayout.LayoutParams)) return;
+        previewFrame.getLocationInWindow(menuFrame);
+        homeOverlay.getLocationInWindow(menuOverlay);
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) resMenuView.getLayoutParams();
-        int top = previewFrame.getTop() - homeScroll.getScrollY() + dp(6);
-        int right = dp(24);
+        int top = menuFrame[1] - menuOverlay[1] + dp(6);
+        int right = Math.max(dp(8), homeOverlay.getWidth()
+                - (menuFrame[0] - menuOverlay[0] + previewFrame.getWidth()) + dp(8));
         if (lp.topMargin == top && lp.rightMargin == right && lp.gravity == (Gravity.TOP | Gravity.RIGHT)) return;
         lp.topMargin = top;
         lp.rightMargin = right;
@@ -397,9 +556,10 @@ final class V22Ui {
         streamScroll = scroll();
         LinearLayout page = page();
         streamScroll.addView(page);
-        page.addView(topBar("画面与推流", "画面参数、局域网推流与 Home Assistant", true));
-        page.addView(preview(true));
-        page.addView(section("画面"));
+        View bar = topBar("画面与推流", "画面参数、局域网推流与 Home Assistant", true);
+        FrameLayout mini = preview(true);
+        LinearLayout rest = column();
+        rest.addView(section("画面"));
         LinearLayout picture = card();
         picture.addView(valueRow("aspect", R.color.ink_orange, R.color.tonal_orange, "推流分辨率",
                 "主界面预览右下角也能切", StreamPresets.label(Prefs.outputWidth(), Prefs.outputHeight()),
@@ -418,18 +578,26 @@ final class V22Ui {
                         refresh();
                     }
                 }));
-        page.addView(picture);
+        rest.addView(picture);
         LinearLayout pushTitle = sectionBar("推流");
         streamLiveChip = liveChip();
         pushTitle.addView(streamLiveChip);
-        page.addView(pushTitle);
+        rest.addView(pushTitle);
         streamPushTop = 0;
         pushTitle.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override public void onLayoutChange(View v, int l, int t, int r, int b,
                                                  int ol, int ot, int or, int ob) {
-                streamPushTop = v.getTop();
+                ScrollView scroller = streamSplit != null && streamSplit.wide
+                        ? streamSplit.side : streamScroll;
+                if (scroller == null) return;
+                int[] here = new int[2];
+                int[] host = new int[2];
+                v.getLocationInWindow(here);
+                scroller.getLocationInWindow(host);
+                // Offset inside the scroll content, whichever pane happens to hold it.
+                streamPushTop = here[1] - host[1] + scroller.getScrollY();
                 if ("stream-push".equals(pageShot) && streamPushTop > 0) {
-                    streamScroll.scrollTo(0, Math.max(0, streamPushTop - dp(8)));
+                    scroller.scrollTo(0, Math.max(0, streamPushTop - dp(8)));
                 }
             }
         });
@@ -458,8 +626,8 @@ final class V22Ui {
                 }));
         lightSummaryBox = lightSummaryCard();
         push.addView(lightSummaryBox);
-        page.addView(push);
-        page.addView(section("Home Assistant 接入"));
+        rest.addView(push);
+        rest.addView(section("Home Assistant 接入"));
         LinearLayout ha = card();
         haSwitch = null;
         ha.addView(switchRow("home", R.color.ink_purple, R.color.tonal_purple, "接入 Home Assistant",
@@ -504,7 +672,8 @@ final class V22Ui {
         ((LinearLayout) haBody).addView(hairline());
         ((LinearLayout) haBody).addView(entity);
         ha.addView(haBody);
-        page.addView(ha);
+        rest.addView(ha);
+        streamSplit = new Split(page, bar, mini, rest);
         return streamScroll;
     }
 
@@ -547,6 +716,7 @@ final class V22Ui {
         clip.addView(image, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         if (mini) {
+            miniFrame = frame;
             miniScene = scene;
             miniImage = image;
             miniPill = pillView();
@@ -629,14 +799,46 @@ final class V22Ui {
             @Override public void onLayoutChange(View v, int l, int t, int r, int b,
                                                  int ol, int ot, int or, int ob) {
                 int width = r - l;
-                int height = width * 9 / 16;
-                if (b - t != height && width > 0) {
+                if (width <= 0) return;
+                int height = pictureHeight(width, mini ? streamScroll : homeScroll);
+                if (b - t != height) {
                     v.getLayoutParams().height = height;
                     v.requestLayout();
                 }
             }
         });
         return frame;
+    }
+
+    /**
+     * The picture takes the frame's own aspect ratio so the whole sensor view fits without
+     * cropping. In landscape it shares the width with the settings column, so it is also
+     * capped to the room the page actually has.
+     */
+    private int pictureHeight(int width, ScrollView host) {
+        int height = (int) ((long) width * frameHeight / Math.max(1, frameWidth));
+        if (landscape() && host != null && host.getHeight() > 0) {
+            int room = host.getHeight() - dp(132);
+            if (room > dp(120)) height = Math.min(height, room);
+        }
+        return Math.max(dp(96), height);
+    }
+
+    /** Applies {@link #pictureHeight} now; a layout change alone does not fire on a new aspect. */
+    private void reheight(View frame, ScrollView host) {
+        if (frame == null) return;
+        int width = frame.getWidth();
+        if (width <= 0) return;
+        int height = pictureHeight(width, host);
+        ViewGroup.LayoutParams lp = frame.getLayoutParams();
+        if (lp == null || lp.height == height) return;
+        lp.height = height;
+        frame.requestLayout();
+    }
+
+    private boolean landscape() {
+        return activity.getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
     }
 
     private View resolutionMenu() {
