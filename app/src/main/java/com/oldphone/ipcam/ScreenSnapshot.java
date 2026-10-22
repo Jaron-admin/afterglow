@@ -11,6 +11,8 @@ public final class ScreenSnapshot {
     public static int todayClips = -1;
     public static int totalClips = -1;
     public static String clock;
+    /** Screenshot clock. Zero uses the live wall clock. */
+    public static long epochMs;
     public static boolean freezeMotion;
     /** Draw the 28dp screenshot status bar and freeze the glow on the shot frame. */
     public static boolean composeChrome;
@@ -27,6 +29,7 @@ public final class ScreenSnapshot {
         todayClips = -1;
         totalClips = -1;
         clock = null;
+        epochMs = 0;
         freezeMotion = false;
         composeChrome = false;
         preview = null;

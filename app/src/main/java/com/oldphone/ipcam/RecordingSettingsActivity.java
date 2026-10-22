@@ -21,7 +21,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -458,30 +457,47 @@ public final class RecordingSettingsActivity extends Activity {
         return block;
     }
 
+    private static String sensitivityBand(int percent) {
+        return percent >= 70 ? "高" : percent >= 40 ? "中" : "低";
+    }
+
+    private TextView tickLabel(String label, int gravity) {
+        TextView view = caption(label);
+        view.setGravity(gravity);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        view.setLayoutParams(lp);
+        return view;
+    }
+
     private View sensitivity() {
         LinearLayout block = column();
         int percent = Prefs.sensitivityPercent();
-        String band = percent >= 70 ? "高" : percent >= 40 ? "中" : "低";
+        String band = sensitivityBand(percent);
+        final TextView value = text(band + " · " + percent, 14, color(R.color.ink_orange), true);
         block.addView(settingHead("gauge", R.color.ink_cyan, R.color.tonal_cyan,
-                "灵敏度", "越高越容易被小动作触发",
-                text(band + " · " + percent, 14, color(R.color.ink_orange), true)));
-        SeekBar slider = new SeekBar(this);
-        slider.setMax(100);
-        slider.setProgress(percent);
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                if (!fromUser) return;
+                "灵敏度", "越高越容易被小动作触发", value));
+        LevelBar slider = new LevelBar(this);
+        slider.setValue(percent);
+        slider.setListener(new LevelBar.Listener() {
+            @Override public void onChanged(int progress) {
                 Prefs.setSensitivityPercent(progress);
+                value.setText(sensitivityBand(progress) + " · " + progress);
             }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {
+            @Override public void onFinished(int progress) {
                 applyIfRunning();
                 rebuild();
             }
         });
-        block.addView(slider);
-        TextView ticks = caption("低          中          高");
+        LinearLayout.LayoutParams sliderLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sliderLp.leftMargin = dp(16);
+        sliderLp.rightMargin = dp(16);
+        block.addView(slider, sliderLp);
+        LinearLayout ticks = row();
         ticks.setPadding(dp(16), 0, dp(16), dp(8));
+        ticks.addView(tickLabel("低", Gravity.LEFT));
+        ticks.addView(tickLabel("中", Gravity.CENTER));
+        ticks.addView(tickLabel("高", Gravity.RIGHT));
         block.addView(ticks);
         return block;
     }

@@ -8,11 +8,23 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -59,6 +71,10 @@ public final class RecordingsActivity extends Activity {
     private List<RecordingStore.Target> targets = new ArrayList<RecordingStore.Target>();
     private Spinner storage;
     private TextView summary, emptyTitle, emptyBody, selectionCount, titleView, notice;
+    private TextView selectButton, selectAllButton;
+    private ImageView backButton;
+    private Bitmap placeholder;
+    private long libraryBytes;
     private View filters;
     private String reasonFilter = "all";
     private View empty, selectionBar;
@@ -87,6 +103,27 @@ public final class RecordingsActivity extends Activity {
         filters = findViewById(R.id.recordingFilters);
         buildFilters();
         summary = (TextView) findViewById(R.id.recordingSummary);
+        backButton = (ImageView) findViewById(R.id.recordingBack);
+        selectButton = (TextView) findViewById(R.id.recordingSelect);
+        selectAllButton = (TextView) findViewById(R.id.recordingSelectAll);
+        selectButton.setCompoundDrawables(Glyph.drawable(this, "select", 16,
+                getResources().getColor(R.color.ink_orange), 2f), null, null, null);
+        selectButton.setCompoundDrawablePadding(dp(4));
+        backButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                if (selecting) clearSelection();
+                else finish();
+            }
+        });
+        selectButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                selecting = true;
+                showSelection();
+            }
+        });
+        selectAllButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) { toggleAll(); }
+        });
         empty = findViewById(R.id.recordingEmpty);
         if (empty instanceof LinearLayout) {
             TextView go = new TextView(this);
@@ -114,6 +151,7 @@ public final class RecordingsActivity extends Activity {
         selectionCount = (TextView) findViewById(R.id.recordingSelectionCount);
         adapter = new RowAdapter();
         list.setAdapter(adapter);
+        list.setSelector(android.R.color.transparent);
         list.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 RecordingStore.Clip clip = rows.get(position).clip;
@@ -166,7 +204,7 @@ public final class RecordingsActivity extends Activity {
 
     private void reloadTargets() {
         final int token = ++generation;
-        summary.setText("正在读取存储…");
+        summary.setVisibility(View.GONE);
         disk.execute(new Runnable() {
             public void run() {
                 final List<RecordingStore.Target> available = RecordingStore.targets(getApplicationContext());
@@ -200,7 +238,7 @@ public final class RecordingsActivity extends Activity {
         if (selectedTarget.length() == 0) return;
         final String target = selectedTarget;
         final int token = ++generation;
-        summary.setText("正在读取录像…");
+        summary.setVisibility(View.GONE);
         disk.execute(new Runnable() {
             public void run() {
                 try {
@@ -221,6 +259,7 @@ public final class RecordingsActivity extends Activity {
                             clips.clear();
                             rows.clear();
                             adapter.notifyDataSetChanged();
+                            summary.setVisibility(View.VISIBLE);
                             summary.setText(message(error));
                             emptyTitle.setText("暂时读不到录像");
                             emptyBody.setText(message(error));
@@ -248,20 +287,35 @@ public final class RecordingsActivity extends Activity {
             RecordingStore.Clip clip = byId.get(item.id);
             if (clip != null && accepts(clip)) visible.add(item);
         }
+        long now = ScreenSnapshot.freezeMotion && ScreenSnapshot.epochMs > 0
+                ? ScreenSnapshot.epochMs : System.currentTimeMillis();
         for (RecordingDayGroups.Section section : RecordingDayGroups.group(
-                visible, System.currentTimeMillis(), TimeZone.getDefault())) {
-            rows.add(new Row(section.title));
+                visible, now, TimeZone.getDefault())) {
+            rows.add(new Row(section.title, dateLine(section.day, section.title), section.items.size()));
             for (RecordingDayGroups.Item item : section.items) rows.add(new Row(byId.get(item.id)));
         }
         selected.retainAll(byId.keySet());
         if (selected.isEmpty()) selecting = false;
+        libraryBytes = total;
         adapter.notifyDataSetChanged();
-        summary.setText("");
-        if (notice != null) notice.setText(clips.isEmpty()
-                ? "暂无录像"
-                : "共 " + clips.size() + " 段 · " + size(total) + " · 长按可多选");
+        summary.setVisibility(View.GONE);
         showEmpty(false);
         showSelection();
+    }
+
+    /** Date line beside 今天/昨天, or the weekday beside an older date. Does not change group titles. */
+    private static String dateLine(String day, String title) {
+        String[] parts = day == null ? new String[0] : day.split("-");
+        if (parts.length != 3) return "";
+        int year = Integer.parseInt(parts[0]);
+        int month = Integer.parseInt(parts[1]);
+        int date = Integer.parseInt(parts[2]);
+        Calendar calendar = Calendar.getInstance();
+        calendar.clear();
+        calendar.set(year, month - 1, date, 12, 0, 0);
+        String week = "周" + "日一二三四五六".charAt(calendar.get(Calendar.DAY_OF_WEEK) - 1);
+        if ("今天".equals(title) || "昨天".equals(title)) return month + "月" + date + "日 " + week;
+        return week;
     }
 
     private void showEmpty(boolean noStorage) {
@@ -270,7 +324,31 @@ public final class RecordingsActivity extends Activity {
         list.setVisibility(show ? View.GONE : View.VISIBLE);
         emptyTitle.setText(noStorage ? R.string.recordings_no_storage_title : R.string.recordings_empty_title);
         emptyBody.setText(noStorage ? R.string.recordings_no_storage_body : R.string.recordings_empty_body);
-        if (noStorage) summary.setText("没有可用存储");
+        if (noStorage) {
+            summary.setVisibility(View.VISIBLE);
+            summary.setText("没有可用存储");
+        }
+    }
+
+    private void toggleAll() {
+        if (allSelected()) {
+            selected.clear();
+            selecting = false;
+        } else {
+            selecting = true;
+            for (Row row : rows) if (row.clip != null) selected.add(row.clip.id);
+        }
+        showSelection();
+    }
+
+    private boolean allSelected() {
+        int visible = 0;
+        for (Row row : rows) {
+            if (row.clip == null) continue;
+            visible++;
+            if (!selected.contains(row.clip.id)) return false;
+        }
+        return visible > 0;
     }
 
     private void toggle(String id) {
@@ -289,7 +367,23 @@ public final class RecordingsActivity extends Activity {
         selectionBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
         selectionCount.setText("已选择 " + selected.size() + " 项");
         if (titleView != null) titleView.setText(selecting ? "已选择 " + selected.size() + " 项" : "录像列表");
-        if (filters != null) filters.setVisibility(selecting ? View.GONE : View.VISIBLE);
+        if (notice != null) {
+            if (selecting) notice.setText("共 " + clips.size() + " · 点按勾选，可导出或删除");
+            else if (clips.isEmpty()) notice.setText("");
+            else notice.setText("共 " + clips.size() + " 段 · " + listSize(libraryBytes) + " · 长按可多选");
+        }
+        boolean showFilters = !selecting && !rows.isEmpty();
+        if (filters != null) filters.setVisibility(showFilters ? View.VISIBLE : View.GONE);
+        if (selectButton != null) selectButton.setVisibility(selecting ? View.GONE : View.VISIBLE);
+        if (selectAllButton != null) {
+            selectAllButton.setVisibility(selecting ? View.VISIBLE : View.GONE);
+            selectAllButton.setText(allSelected() ? "取消全选" : "全选");
+        }
+        if (backButton != null) {
+            backButton.setImageDrawable(Glyph.drawable(this, selecting ? "close" : "back", 22,
+                    getResources().getColor(R.color.on_surface), 2f));
+            backButton.setContentDescription(selecting ? "取消选择" : "返回");
+        }
         adapter.notifyDataSetChanged();
     }
 
@@ -315,34 +409,62 @@ public final class RecordingsActivity extends Activity {
     }
 
     private void buildFilters() {
-        if (!(filters instanceof android.widget.HorizontalScrollView)) return;
-        android.widget.HorizontalScrollView scroll = (android.widget.HorizontalScrollView) filters;
-        scroll.removeAllViews();
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(4), 0, dp(4));
+        if (!(filters instanceof LinearLayout)) return;
+        LinearLayout row = (LinearLayout) filters;
+        row.removeAllViews();
         addFilter(row, "all", "全部");
         addFilter(row, "motion", "画面");
         addFilter(row, "sound", "声音");
         addFilter(row, "timer", "定时");
         addFilter(row, "light", "光感");
-        scroll.addView(row);
     }
 
     private void addFilter(LinearLayout row, final String code, String label) {
-        TextView chip = new TextView(this);
         boolean on = code.equals(reasonFilter);
-        chip.setText(label);
-        chip.setTextSize(14);
-        chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(android.view.Gravity.CENTER);
+        chip.setPadding(dp(8), 0, dp(8), 0);
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(17));
+        int ink = R.color.on_surface_variant;
+        if (!on) {
+            background.setColor(0);
+            background.setStroke(Math.max(1, dp(1)), getResources().getColor(R.color.outline));
+        } else if ("motion".equals(code)) {
+            background.setColor(getResources().getColor(R.color.tonal_orange));
+            ink = R.color.ink_orange;
+        } else if ("sound".equals(code)) {
+            background.setColor(getResources().getColor(R.color.tonal_cyan));
+            ink = R.color.ink_cyan;
+        } else if ("timer".equals(code)) {
+            background.setColor(getResources().getColor(R.color.tonal_purple));
+            ink = R.color.ink_purple;
+        } else if ("light".equals(code)) {
+            background.setColor(getResources().getColor(R.color.tonal_amber));
+            ink = R.color.ink_amber;
+        } else {
+            background.setColor(getResources().getColor(R.color.surface_3));
+            ink = R.color.on_surface;
+        }
+        chip.setBackground(background);
         int dot = filterDot(code);
         if (dot != 0) {
-            chip.setCompoundDrawables(dotDrawable(dot), null, null, null);
-            chip.setCompoundDrawablePadding(dp(6));
+            View mark = new View(this);
+            GradientDrawable oval = new GradientDrawable();
+            oval.setShape(GradientDrawable.OVAL);
+            oval.setColor(getResources().getColor(dot));
+            mark.setBackground(oval);
+            LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(8), dp(8));
+            dotLp.rightMargin = dp(4);
+            chip.addView(mark, dotLp);
         }
-        chip.setTextColor(getResources().getColor(on ? R.color.on_surface : R.color.on_surface_variant));
-        chip.setBackgroundResource(on ? R.drawable.bg_card : R.drawable.bg_field);
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextSize(13);
+        name.setTextColor(getResources().getColor(ink));
+        name.setSingleLine(true);
+        chip.addView(name);
         chip.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
                 reasonFilter = code;
@@ -350,9 +472,8 @@ public final class RecordingsActivity extends Activity {
                 rebuild();
             }
         });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1f);
+        lp.rightMargin = "light".equals(code) ? 0 : dp(6);
         row.addView(chip, lp);
     }
 
@@ -362,15 +483,6 @@ public final class RecordingsActivity extends Activity {
         if ("timer".equals(code)) return R.color.purple;
         if ("light".equals(code)) return R.color.amber;
         return 0;
-    }
-
-    private android.graphics.drawable.Drawable dotDrawable(int color) {
-        int size = dp(8);
-        android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
-        dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        dot.setColor(getResources().getColor(color));
-        dot.setBounds(0, 0, size, size);
-        return dot;
     }
 
     private List<RecordingStore.Clip> chosen() {
@@ -621,7 +733,7 @@ public final class RecordingsActivity extends Activity {
                             return;
                         }
                         if (shown == null) thumbFailed.add(clip.id);
-                        else thumbs.put(clip.id, shown);
+                        else thumbs.put(clip.id, rounded(shown));
                         if (target.equals(selectedTarget)) adapter.notifyDataSetChanged();
                     }
                 });
@@ -681,6 +793,18 @@ public final class RecordingsActivity extends Activity {
         if (values != null) for (String value : values) if (value != null) into.add(value);
     }
 
+    /** Decimal megabytes for the list. {@link #size(long)} stays binary for other callers. */
+    static String listSize(long bytes) {
+        if (bytes < 1000) return bytes + " B";
+        if (bytes < 1_000_000L) return String.format(Locale.US, "%.0f KB", bytes / 1000.0);
+        if (bytes < 1_000_000_000L) {
+            double mb = bytes / 1_000_000.0;
+            if (Math.abs(mb - Math.rint(mb)) < 0.05) return String.format(Locale.US, "%.0f MB", mb);
+            return String.format(Locale.US, "%.1f MB", mb);
+        }
+        return String.format(Locale.US, "%.2f GB", bytes / 1_000_000_000.0);
+    }
+
     static String size(long bytes) {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format(Locale.getDefault(), "%.0f KiB", bytes / 1024.0);
@@ -703,6 +827,29 @@ public final class RecordingsActivity extends Activity {
                 calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE));
     }
 
+    private CharSequence clockText(long millis, boolean locked) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(millis);
+        String hour = String.format(Locale.US, "%02d:%02d",
+                calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE));
+        String seconds = String.format(Locale.US, ":%02d", calendar.get(Calendar.SECOND));
+        SpannableStringBuilder text = new SpannableStringBuilder(hour).append(seconds);
+        int from = hour.length();
+        text.setSpan(new ForegroundColorSpan(getResources().getColor(R.color.on_surface_variant)),
+                from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new AbsoluteSizeSpan(13, true), from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new StyleSpan(Typeface.NORMAL), from, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (locked) text.append("  已锁定");
+        return text;
+    }
+
+    private static String badge(long millis) {
+        long seconds = Math.max(0, millis / 1000L);
+        if (seconds >= 3600) return String.format(Locale.US, "%d:%02d:%02d",
+                seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+        return String.format(Locale.US, "%02d:%02d", seconds / 60, seconds % 60);
+    }
+
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -722,9 +869,21 @@ public final class RecordingsActivity extends Activity {
 
     private static final class Row {
         final String header;
+        final String dateLine;
+        final int count;
         final RecordingStore.Clip clip;
-        Row(String header) { this.header = header; this.clip = null; }
-        Row(RecordingStore.Clip clip) { this.header = null; this.clip = clip; }
+        Row(String header, String dateLine, int count) {
+            this.header = header;
+            this.dateLine = dateLine;
+            this.count = count;
+            this.clip = null;
+        }
+        Row(RecordingStore.Clip clip) {
+            this.header = null;
+            this.dateLine = null;
+            this.count = 0;
+            this.clip = clip;
+        }
     }
 
     private final class RowAdapter extends BaseAdapter {
@@ -738,9 +897,12 @@ public final class RecordingsActivity extends Activity {
         public View getView(int position, View convert, ViewGroup parent) {
             Row row = rows.get(position);
             if (row.clip == null) {
-                TextView header = convert instanceof TextView ? (TextView) convert
-                        : (TextView) getLayoutInflater().inflate(R.layout.item_recording_header, parent, false);
-                header.setText(row.header);
+                View header = convert != null && convert.findViewById(R.id.recordingHeaderTitle) != null
+                        ? convert
+                        : getLayoutInflater().inflate(R.layout.item_recording_header, parent, false);
+                ((TextView) header.findViewById(R.id.recordingHeaderTitle)).setText(row.header);
+                ((TextView) header.findViewById(R.id.recordingHeaderDate)).setText(row.dateLine);
+                ((TextView) header.findViewById(R.id.recordingHeaderCount)).setText(row.count + " 段");
                 return header;
             }
             View view = convert != null && convert.findViewById(R.id.recordingTime) != null ? convert
@@ -752,14 +914,15 @@ public final class RecordingsActivity extends Activity {
             ImageView thumb = (ImageView) view.findViewById(R.id.recordingThumb);
             TextView lock = (TextView) view.findViewById(R.id.recordingLock);
             CheckBox mark = (CheckBox) view.findViewById(R.id.recordingMark);
-            time.setText(clock(clip.startTimeMs) + (clip.locked ? "  已锁定" : ""));
-            meta.setText(duration(clip.durationMs) + " · " + size(clip.bytes)
-                    + (clip.withAudio ? " · 有声" : ""));
+            TextView durationView = (TextView) view.findViewById(R.id.recordingDuration);
+            time.setText(clockText(clip.startTimeMs, clip.locked));
+            meta.setText(listSize(clip.bytes));
+            if (durationView != null) durationView.setText(badge(clip.durationMs));
             bindTags(tags, clip);
             Bitmap bitmap = thumbs.get(clip.id);
             if (bitmap != null) thumb.setImageBitmap(bitmap);
             else {
-                thumb.setImageDrawable(null);
+                thumb.setImageBitmap(scenePlaceholder());
                 requestThumb(clip);
             }
             lock.setVisibility(View.GONE);
@@ -774,8 +937,11 @@ public final class RecordingsActivity extends Activity {
             open.setVisibility(selecting ? View.GONE : View.VISIBLE);
             mark.setVisibility(selecting ? View.VISIBLE : View.GONE);
             mark.setChecked(selected.contains(clip.id));
-            view.setBackgroundColor(selected.contains(clip.id)
-                    ? getResources().getColor(R.color.selection_bg) : 0);
+            boolean first = position == 0 || rows.get(position - 1).clip == null;
+            boolean last = position == rows.size() - 1 || rows.get(position + 1).clip == null;
+            view.setBackground(rowBackground(first, last, selected.contains(clip.id)));
+            View divider = view.findViewById(R.id.recordingDivider);
+            if (divider != null) divider.setVisibility(last ? View.GONE : View.VISIBLE);
             StringBuilder spoken = new StringBuilder();
             spoken.append(clock(clip.startTimeMs)).append("，").append(duration(clip.durationMs));
             for (int i = 0; i < tags.getChildCount(); i++) {
@@ -785,6 +951,40 @@ public final class RecordingsActivity extends Activity {
             view.setContentDescription(spoken.toString());
             return view;
         }
+    }
+
+    private GradientDrawable rowBackground(boolean first, boolean last, boolean marked) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(getResources().getColor(marked ? R.color.selection_bg : R.color.surface));
+        float radius = dp(20);
+        float[] radii = new float[8];
+        if (first) {
+            radii[0] = radii[1] = radii[2] = radii[3] = radius;
+        }
+        if (last) {
+            radii[4] = radii[5] = radii[6] = radii[7] = radius;
+        }
+        shape.setCornerRadii(radii);
+        return shape;
+    }
+
+    private Bitmap scenePlaceholder() {
+        if (placeholder == null) placeholder = rounded(SceneThumb.bitmap("living", dp(104), dp(64)));
+        return placeholder;
+    }
+
+    private Bitmap rounded(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        Bitmap out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float radius = Math.min(width, height) * 12f / 64f;
+        canvas.drawRoundRect(new RectF(0, 0, width, height), radius, radius, paint);
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+        canvas.drawBitmap(source, 0, 0, paint);
+        if (source != placeholder) source.recycle();
+        return out;
     }
 
     private void bindTags(LinearLayout tags, RecordingStore.Clip clip) {

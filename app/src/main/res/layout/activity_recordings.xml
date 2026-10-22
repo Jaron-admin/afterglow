@@ -7,12 +7,61 @@
 
     <LinearLayout
         android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="8dp"
+        android:paddingRight="12dp">
+
+        <ImageView
+            android:id="@+id/recordingBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_icon_well"
+            android:contentDescription="返回"
+            android:padding="10dp"
+            android:scaleType="fitCenter" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/recordingSelect"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_text_button"
+            android:gravity="center"
+            android:paddingLeft="12dp"
+            android:paddingRight="14dp"
+            android:text="选择"
+            android:textColor="@color/ink_orange"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/recordingSelectAll"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_text_button"
+            android:gravity="center"
+            android:paddingLeft="12dp"
+            android:paddingRight="14dp"
+            android:text="全选"
+            android:textColor="@color/ink_orange"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingLeft="16dp"
-        android:paddingTop="16dp"
-        android:paddingRight="16dp"
-        android:paddingBottom="8dp">
+        android:paddingLeft="20dp"
+        android:paddingRight="20dp"
+        android:paddingBottom="4dp">
 
         <TextView
             android:id="@+id/recordingTitle"
@@ -20,32 +69,32 @@
             android:layout_height="wrap_content"
             android:text="@string/recordings_title"
             android:textColor="@color/on_surface"
-            android:textSize="28sp"
+            android:textSize="26sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/recordingNotice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/recordings_notice"
+            android:layout_marginTop="2dp"
             android:textColor="@color/on_surface_variant"
             android:textSize="13sp" />
 
-        <HorizontalScrollView
+        <LinearLayout
             android:id="@+id/recordingFilters"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:scrollbars="none" />
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal" />
 
         <FrameLayout
             android:id="@+id/recordingStorageBox"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="12dp"
-            android:visibility="gone"
-            android:background="@drawable/bg_field">
+            android:background="@drawable/bg_field"
+            android:visibility="gone">
 
             <TextView
                 android:layout_width="24dp"
@@ -73,7 +122,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:textColor="@color/secondary"
-            android:textSize="12sp" />
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <FrameLayout
@@ -86,10 +136,10 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:divider="@color/divider"
-            android:dividerHeight="1dp"
-            android:paddingLeft="12dp"
-            android:paddingRight="12dp"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
             android:paddingBottom="12dp" />
 
         <LinearLayout
@@ -116,10 +166,10 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
+                android:fontFamily="sans-serif-medium"
                 android:text="@string/recordings_empty_title"
                 android:textColor="@color/on_surface"
-                android:textSize="18sp"
-                android:fontFamily="sans-serif-medium" />
+                android:textSize="18sp" />
 
             <TextView
                 android:id="@+id/recordingEmptyBody"

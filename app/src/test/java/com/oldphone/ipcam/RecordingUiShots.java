@@ -27,6 +27,7 @@ import org.robolectric.shadows.ShadowLooper;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.RandomAccessFile;
 import java.util.Calendar;
 import java.util.Properties;
 
@@ -112,6 +113,7 @@ public class RecordingUiShots {
 
         prepare();
         clearRecordings();
+        listChrome();
         ActivityControllerHold<RecordingsActivity> empty = launch(RecordingsActivity.class);
         try {
             waitUntil(root(empty.activity), "还没有录像", 40);
@@ -120,6 +122,7 @@ public class RecordingUiShots {
 
         prepare();
         seedRecordings();
+        listChrome();
         ActivityControllerHold<RecordingsActivity> list = launch(RecordingsActivity.class);
         try {
             waitUntil(root(list.activity), "今天", 40);
@@ -271,39 +274,58 @@ public class RecordingUiShots {
         return root;
     }
 
+    private static void listChrome() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(2026, Calendar.OCTOBER, 22, 10, 6, 21);
+        calendar.set(Calendar.MILLISECOND, 0);
+        ScreenSnapshot.epochMs = calendar.getTimeInMillis();
+        ScreenSnapshot.clock = "2026-10-22 10:06:21";
+        ScreenSnapshot.freezeMotion = true;
+        ScreenSnapshot.composeChrome = true;
+    }
+
+    private static long at(int year, int month, int day, int hour, int minute, int second) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(year, month - 1, day, hour, minute, second);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
+    }
+
     private static void seedRecordings() throws Exception {
         clearRecordings();
         File root = recordingsRoot();
-        Calendar calendar = Calendar.getInstance();
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        calendar.set(Calendar.MINUTE, 20);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MILLISECOND, 0);
-        long morning = calendar.getTimeInMillis();
-        if (morning > System.currentTimeMillis()) morning = System.currentTimeMillis() - 60_000L;
-        calendar.add(Calendar.DATE, -1);
-        calendar.set(Calendar.HOUR_OF_DAY, 21);
-        calendar.set(Calendar.MINUTE, 40);
-        clip(root, "1729000000001-aaaabbbb-1111-2222-3333-444455556666",
-                morning, 185_000L, "motion", "画面变动 · 12 秒", true, false);
-        clip(root, "1729000000002-bbbbcccc-1111-2222-3333-444455556666",
-                morning + 3_600_000L, 45_000L, "sound", "声响 · 0.4 秒", false, false);
-        clip(root, "1729000000003-ccccdddd-1111-2222-3333-444455556666",
-                calendar.getTimeInMillis(), 300_000L, "schedule,sound", "定时", true, true);
-        clip(root, "1729000000004-ddddeeee-1111-2222-3333-444455556667",
-                morning + 4_000_000L, 86_000L, "light", "光感触发", false, false);
+        clip(root, "1729552328001-aaaabbbb-1111-2222-3333-444455556671",
+                at(2026, 10, 22, 9, 52, 8), 192_000L, "motion", "画面变动", true, false, "living", 86_000_000L);
+        clip(root, "1729546540002-bbbbcccc-1111-2222-3333-444455556672",
+                at(2026, 10, 22, 8, 15, 40), 48_000L, "sound", "声音触发", true, false, "door", 21_000_000L);
+        clip(root, "1729542000003-ccccdddd-1111-2222-3333-444455556673",
+                at(2026, 10, 22, 7, 0, 0), 300_000L, "schedule", "定时录制", true, false, "balcony", 136_000_000L);
+        clip(root, "1729540265004-ddddeeee-1111-2222-3333-444455556674",
+                at(2026, 10, 22, 6, 31, 5), 86_000L, "light", "光感触发", true, false, "balcony", 38_000_000L);
+        clip(root, "1729513071005-eeeeffff-1111-2222-3333-444455556675",
+                at(2026, 10, 21, 22, 17, 51), 35_000L, "sound", "声音触发", true, false, "door", 15_000_000L);
+        clip(root, "1729500603006-ffffaaaa-1111-2222-3333-444455556676",
+                at(2026, 10, 21, 18, 50, 3), 124_000L, "motion", "画面变动", true, false, "door", 57_000_000L);
+        clip(root, "1729476000007-aaaabbbb-1111-2222-3333-444455556677",
+                at(2026, 10, 21, 12, 0, 0), 300_000L, "schedule", "定时录制", true, false, "living", 136_000_000L);
+        clip(root, "1729432102008-bbbbcccc-1111-2222-3333-444455556678",
+                at(2026, 10, 20, 23, 48, 22), 57_000L, "light", "光感触发", true, false, "living", 26_000_000L);
+        clip(root, "1729401156009-ccccdddd-1111-2222-3333-444455556679",
+                at(2026, 10, 20, 15, 12, 36), 70_000L, "sound", "声音触发", true, false, "living", 31_000_000L);
     }
 
     private static void clip(File root, String id, long start, long duration, String triggers,
                              String events, boolean thumbnail, boolean locked) throws Exception {
+        clip(root, id, start, duration, triggers, events, thumbnail, locked, "living", 2_000_000L);
+    }
+
+    private static void clip(File root, String id, long start, long duration, String triggers,
+                             String events, boolean thumbnail, boolean locked, String scene, long bytes) throws Exception {
         File video = new File(root, id + ".mp4");
-        FileOutputStream videoOut = new FileOutputStream(video);
-        try {
-            byte[] chunk = new byte[64 * 1024];
-            chunk[4] = 'f'; chunk[5] = 't'; chunk[6] = 'y'; chunk[7] = 'p';
-            for (int i = 0; i < 32; i++) videoOut.write(chunk);
-        } finally { videoOut.close(); }
-        if (thumbnail) writeJpeg(new File(root, id + ".jpg"));
+        RandomAccessFile stored = new RandomAccessFile(video, "rw");
+        try { stored.setLength(Math.max(1L, bytes)); }
+        finally { stored.close(); }
+        if (thumbnail) SceneThumb.write(new File(root, id + ".jpg"), scene);
         Properties props = new Properties();
         props.setProperty("state", "complete");
         props.setProperty("start", Long.toString(start));
@@ -316,17 +338,6 @@ public class RecordingUiShots {
         FileOutputStream meta = new FileOutputStream(new File(root, id + ".meta"));
         try { props.store(meta, "shot"); }
         finally { meta.close(); }
-    }
-
-    private static void writeJpeg(File dest) throws Exception {
-        Bitmap bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888);
-        bitmap.eraseColor(0xFFC2410C);
-        int[] band = new int[320];
-        for (int i = 0; i < band.length; i++) band[i] = 0xFF0F766E;
-        for (int y = 48; y < 132; y++) bitmap.setPixels(band, 0, 320, 0, y, 320, 1);
-        FileOutputStream output = new FileOutputStream(dest);
-        try { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output), "thumbnail jpeg"); }
-        finally { output.close(); bitmap.recycle(); }
     }
 
     private static View root(Activity activity) {

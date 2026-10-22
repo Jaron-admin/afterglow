@@ -24,6 +24,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -43,6 +44,8 @@ final class V22Ui {
     private View home;
     private View stream;
     private ScrollView streamScroll;
+    private ScrollView homeScroll;
+    private FrameLayout previewFrame;
     private int streamPushTop;
     private boolean resMenu;
     private boolean wantStream;
@@ -114,6 +117,8 @@ final class V22Ui {
                 || (activity.getIntent() != null && activity.getIntent().getBooleanExtra(MainActivity.EXTRA_STREAM_PAGE, false));
         home = buildHome();
         stream = buildStream();
+        content.setClipChildren(false);
+        content.setClipToPadding(false);
         content.addView(home, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         content.addView(stream, new ViewGroup.LayoutParams(
@@ -298,10 +303,12 @@ final class V22Ui {
 
     private View buildHome() {
         ScrollView scroll = scroll();
+        homeScroll = scroll;
         LinearLayout page = page();
         scroll.addView(page);
         page.addView(header());
         FrameLayout preview = preview(false);
+        previewFrame = preview;
         page.addView(preview);
         page.addView(lensSegment());
         page.addView(stats());
@@ -316,7 +323,39 @@ final class V22Ui {
         page.addView(gap(soundCard(), 0, 12, 0, 0));
         page.addView(section("功能"));
         page.addView(entries());
-        return scroll;
+        FrameLayout overlay = new FrameLayout(activity);
+        overlay.setClipChildren(false);
+        overlay.setClipToPadding(false);
+        overlay.addView(scroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (resMenuView != null && resMenuView.getParent() == null) {
+            FrameLayout.LayoutParams menuLp = new FrameLayout.LayoutParams(
+                    dp(196), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
+            overlay.addView(resMenuView, menuLp);
+        }
+        preview.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                 int ol, int ot, int or, int ob) {
+                positionResolutionMenu();
+            }
+        });
+        scroll.getViewTreeObserver().addOnScrollChangedListener(new ViewTreeObserver.OnScrollChangedListener() {
+            @Override public void onScrollChanged() { positionResolutionMenu(); }
+        });
+        return overlay;
+    }
+
+    private void positionResolutionMenu() {
+        if (resMenuView == null || previewFrame == null || homeScroll == null) return;
+        if (!(resMenuView.getLayoutParams() instanceof FrameLayout.LayoutParams)) return;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) resMenuView.getLayoutParams();
+        int top = previewFrame.getTop() - homeScroll.getScrollY() + dp(6);
+        int right = dp(24);
+        if (lp.topMargin == top && lp.rightMargin == right && lp.gravity == (Gravity.TOP | Gravity.RIGHT)) return;
+        lp.topMargin = top;
+        lp.rightMargin = right;
+        lp.gravity = Gravity.TOP | Gravity.RIGHT;
+        resMenuView.setLayoutParams(lp);
     }
 
     private View buildStream() {
@@ -430,7 +469,7 @@ final class V22Ui {
 
     private View header() {
         LinearLayout row = row();
-        row.setPadding(0, dp(12), 0, dp(16));
+        row.setPadding(0, dp(12), 0, dp(28));
         row.setGravity(Gravity.CENTER_VERTICAL);
         View logo = new LogoView(activity);
         row.addView(logo, new LinearLayout.LayoutParams(dp(40), dp(40)));
@@ -533,8 +572,6 @@ final class V22Ui {
             frame.addView(previewClock, clock);
             frame.addView(resChipBox, chip);
             resMenuView = resolutionMenu();
-            frame.addView(resMenuView, new FrameLayout.LayoutParams(
-                    dp(220), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT));
         }
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -555,26 +592,51 @@ final class V22Ui {
 
     private View resolutionMenu() {
         LinearLayout menu = card();
-        menu.setPadding(dp(8), dp(8), dp(8), dp(8));
-        TextView title = text("推流分辨率", 14, color(R.color.on_surface), true);
+        menu.setPadding(dp(6), dp(6), dp(6), dp(6));
+        TextView title = text("推流分辨率", 12, color(R.color.on_surface_variant), false);
+        title.setPadding(dp(10), dp(6), dp(10), dp(4));
         menu.addView(title);
         for (int i = 0; i < StreamPresets.SIZES.length; i++) {
             final int width = StreamPresets.SIZES[i][0];
             final int height = StreamPresets.SIZES[i][1];
-            TextView item = text(StreamPresets.LABELS[i] + "    " + width + "×" + height,
-                    14, color(R.color.on_surface), false);
-            item.setPadding(dp(8), dp(8), dp(8), dp(8));
-            item.setTag(width + "x" + height);
-            item.setOnClickListener(new View.OnClickListener() {
+            LinearLayout row = row();
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(40));
+            row.setPadding(dp(8), 0, dp(10), 0);
+            row.setTag(width + "x" + height);
+            ImageView mark = new ImageView(activity);
+            mark.setImageDrawable(Glyph.drawable(activity, "check", 16, color(R.color.ink_orange), 2.6f));
+            row.addView(mark, new LinearLayout.LayoutParams(dp(16), dp(16)));
+            TextView label = text(StreamPresets.LABELS[i], 15, color(R.color.on_surface), false);
+            label.setPadding(dp(8), 0, 0, 0);
+            row.addView(label);
+            View spacer = new View(activity);
+            row.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+            TextView pixels = text(width + "×" + height, 12, color(R.color.on_surface_disabled), false);
+            row.addView(pixels);
+            row.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     resMenu = false;
                     activity.v22SetResolution(width, height);
                 }
             });
-            menu.addView(item);
+            menu.addView(row);
         }
-        TextView hint = caption("推流中切换会断开 1–2 秒后自动重连；正在录的一段会结束");
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        View line = new View(activity);
+        line.setBackgroundColor(color(R.color.outline));
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        lineLp.topMargin = dp(4);
+        menu.addView(line, lineLp);
+        LinearLayout hint = row();
+        hint.setPadding(dp(8), dp(6), dp(8), dp(4));
+        ImageView info = new ImageView(activity);
+        info.setImageDrawable(Glyph.drawable(activity, "info", 13, color(R.color.on_surface_variant), 2f));
+        hint.addView(info, new LinearLayout.LayoutParams(dp(13), dp(13)));
+        TextView hintText = caption("推流中切换会断开 1–2 秒后自动重连；正在录的一段会结束");
+        hintText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        hintText.setPadding(dp(5), 0, 0, 0);
+        hint.addView(hintText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         menu.addView(hint);
         menu.setVisibility(View.GONE);
         return menu;
@@ -586,9 +648,21 @@ final class V22Ui {
         String current = Prefs.outputWidth() + "x" + Prefs.outputHeight();
         for (int i = 0; i < menu.getChildCount(); i++) {
             View child = menu.getChildAt(i);
-            if (child.getTag() == null) continue;
-            boolean on = current.equals(child.getTag());
-            child.setBackground(on ? round(color(R.color.tonal_orange), 10) : null);
+            if (!(child instanceof LinearLayout) || child.getTag() == null) continue;
+            LinearLayout row = (LinearLayout) child;
+            boolean on = current.equals(row.getTag());
+            row.setBackground(on ? round(color(R.color.tonal_orange), 10) : null);
+            int ink = color(on ? R.color.ink_orange : R.color.on_surface);
+            if (row.getChildAt(0) != null) row.getChildAt(0).setVisibility(on ? View.VISIBLE : View.INVISIBLE);
+            if (row.getChildAt(1) instanceof TextView) {
+                TextView label = (TextView) row.getChildAt(1);
+                label.setTextColor(ink);
+                label.setTypeface(on ? Typeface.create("sans-serif-medium", Typeface.BOLD) : Typeface.DEFAULT);
+            }
+            View last = row.getChildAt(row.getChildCount() - 1);
+            if (last instanceof TextView) {
+                ((TextView) last).setTextColor(color(on ? R.color.ink_orange : R.color.on_surface_disabled));
+            }
         }
     }
 
@@ -666,6 +740,7 @@ final class V22Ui {
     private View entry(String icon, String title, TextView summary, int well, int ink, View.OnClickListener click) {
         LinearLayout card = card();
         card.setMinimumHeight(dp(118));
+        card.setPadding(dp(12), dp(14), dp(12), dp(14));
         card.setOnClickListener(click);
         card.addView(Glyph.well(activity, icon, color(well), color(ink)),
                 new LinearLayout.LayoutParams(dp(40), dp(40)));
@@ -990,7 +1065,7 @@ final class V22Ui {
     }
 
     private View bigButton() {
-        int extra = dp(36);
+        int extra = dp(40);
         FrameLayout wrap = new FrameLayout(activity);
         wrap.setClipChildren(false);
         streamHalo = new Motion.Halo(activity);
@@ -1020,7 +1095,7 @@ final class V22Ui {
         lp.leftMargin = -extra;
         lp.rightMargin = -extra;
         lp.topMargin = dp(18) - extra;
-        lp.bottomMargin = -extra;
+        lp.bottomMargin = dp(22) - extra;
         wrap.setLayoutParams(lp);
         return wrap;
     }
@@ -1196,6 +1271,7 @@ final class V22Ui {
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
         scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
         scroll.setBackgroundColor(color(R.color.background));
         return scroll;
     }
@@ -1203,6 +1279,7 @@ final class V22Ui {
     private LinearLayout page() {
         LinearLayout page = column();
         page.setClipChildren(false);
+        page.setClipToPadding(false);
         page.setPadding(dp(16), dp(8), dp(16), dp(24));
         return page;
     }

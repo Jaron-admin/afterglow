@@ -1,10 +1,10 @@
 package com.oldphone.ipcam;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -267,40 +267,99 @@ final class Motion {
         }
     }
 
-    /** Soft fringe inside spread+blur. Rings overlap slightly so the edge does not band. */
+    /**
+     * Soft shadow that follows the rounded shape. A blurred mask fades to nothing,
+     * so the fringe is not a stack of hard-edged strokes.
+     */
     private static void drawShadow(Canvas canvas, RectF box, float radius, int color,
                                    float blur, float spread, float alpha, float dy, boolean inset) {
         if (alpha <= 0.004f || blur < 1f) return;
+        float reach = blur + Math.max(0f, spread) + Math.abs(dy) + 2f;
+        int left = (int) Math.floor(box.left - reach);
+        int top = (int) Math.floor(box.top - reach);
+        int width = (int) Math.ceil(box.right + reach) - left;
+        int height = (int) Math.ceil(box.bottom + reach) - top;
+        if (width < 4 || height < 4 || width * height > 2_500_000) return;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas mask = new Canvas(bitmap);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        float reach = blur + spread;
-        float step = 2f;
-        paint.setStrokeWidth(3f);
-        int save = canvas.save();
-        if (inset) {
-            Path clip = new Path();
-            clip.addRoundRect(box, radius, radius, Path.Direction.CW);
-            canvas.clipPath(clip);
-        }
-        for (float dist = step * 0.5f; dist <= reach; dist += step) {
-            float fade = 1f;
-            if (dist > spread) {
-                float x = (dist - spread) / blur;
-                fade = (float) Math.exp(-x * x * 2.2);
+        paint.setColor(Color.WHITE);
+        float rad = Math.min(radius + Math.max(0f, spread), Math.min(box.width(), box.height()) / 2f + spread);
+        RectF shape = new RectF(box);
+        shape.inset(-Math.max(0f, spread), -Math.max(0f, spread));
+        shape.offset(-left, -top);
+        mask.drawRoundRect(shape, Math.max(1f, rad), Math.max(1f, rad), paint);
+        int[] pixels = new int[width * height];
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+        int[] channel = new int[pixels.length];
+        for (int i = 0; i < pixels.length; i++) channel[i] = pixels[i] >>> 24;
+        int pass = Math.max(1, Math.round(blur / 3f));
+        boxBlur(channel, width, height, pass);
+        boxBlur(channel, width, height, pass);
+        boxBlur(channel, width, height, pass);
+        int red = (color >> 16) & 0xFF;
+        int green = (color >> 8) & 0xFF;
+        int blue = color & 0xFF;
+        float limit = Math.min(radius, Math.min(box.width(), box.height()) / 2f);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int i = y * width + x;
+                float px = left + x + 0.5f;
+                float py = top + y + 0.5f;
+                boolean inside = containsRound(px, py, box, limit);
+                int maskAlpha = channel[i];
+                int fringe = inset ? (inside ? 255 - maskAlpha : 0) : (inside ? 0 : maskAlpha);
+                int out = Math.round(fringe * alpha);
+                if (out < 2) {
+                    pixels[i] = 0;
+                } else {
+                    pixels[i] = (Math.min(255, out) << 24) | (red << 16) | (green << 8) | blue;
+                }
             }
-            float strokeAlpha = alpha * fade;
-            if (strokeAlpha < 0.012f) continue;
-            paint.setColor(withAlpha(color, Math.min(0.9f, strokeAlpha)));
-            RectF ring = new RectF(box);
-            ring.inset(inset ? dist : -dist, inset ? dist : -dist);
-            if (!inset && dy != 0f) ring.offset(0f, dy);
-            if (ring.width() <= 1f || ring.height() <= 1f) continue;
-            float rad = Math.max(1f, radius + (inset ? -dist : dist));
-            canvas.drawRoundRect(ring, rad, rad, paint);
         }
-        canvas.restoreToCount(save);
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+        canvas.drawBitmap(bitmap, left, top + dy, null);
+        bitmap.recycle();
+    }
+
+    private static boolean containsRound(float x, float y, RectF box, float radius) {
+        if (x < box.left || x > box.right || y < box.top || y > box.bottom) return false;
+        float dx = 0f;
+        float dy = 0f;
+        if (x < box.left + radius) dx = box.left + radius - x;
+        else if (x > box.right - radius) dx = x - (box.right - radius);
+        if (y < box.top + radius) dy = box.top + radius - y;
+        else if (y > box.bottom - radius) dy = y - (box.bottom - radius);
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
+    private static void boxBlur(int[] alpha, int width, int height, int radius) {
+        if (radius < 1) return;
+        int[] tmp = new int[alpha.length];
+        int window = radius * 2 + 1;
+        for (int y = 0; y < height; y++) {
+            int row = y * width;
+            int sum = 0;
+            for (int i = -radius; i <= radius; i++) sum += alpha[row + clamp(i, 0, width - 1)];
+            for (int x = 0; x < width; x++) {
+                tmp[row + x] = sum / window;
+                sum += alpha[row + clamp(x + radius + 1, 0, width - 1)];
+                sum -= alpha[row + clamp(x - radius, 0, width - 1)];
+            }
+        }
+        for (int x = 0; x < width; x++) {
+            int sum = 0;
+            for (int i = -radius; i <= radius; i++) sum += tmp[clamp(i, 0, height - 1) * width + x];
+            for (int y = 0; y < height; y++) {
+                alpha[y * width + x] = sum / window;
+                sum += tmp[clamp(y + radius + 1, 0, height - 1) * width + x];
+                sum -= tmp[clamp(y - radius, 0, height - 1) * width + x];
+            }
+        }
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return value < min ? min : (value > max ? max : value);
     }
 
     private static float lerp(float from, float to, float amount) {
