@@ -73,6 +73,14 @@ public final class RecordingManager implements AutoCloseable {
         if ((jpeg[0] & 255) != 0xFF || (jpeg[1] & 255) != 0xD8) return;
         latestStill = java.util.Arrays.copyOf(jpeg, jpeg.length);
     }
+    public void setSustain(final boolean value) {
+        if (closing || failed) return;
+        offer(new RecordingWorkQueue.Work() {
+            public void run() throws IOException {
+                if (timeline != null) timeline.setSustain(value);
+            }
+        }, 0);
+    }
     public void setArmed(final boolean value) {
         if (armed == value || closing || failed) return;
         armed = value;

@@ -8,7 +8,7 @@
     <dimen name="space_xl">24dp</dimen>
     <dimen name="space_xxl">32dp</dimen>
 
-    <dimen name="radius_card">12dp</dimen>
+    <dimen name="radius_card">20dp</dimen>
     <dimen name="radius_field">8dp</dimen>
     <dimen name="radius_pill">28dp</dimen>
 

@@ -9,11 +9,11 @@
     <string name="btn_stop">停止</string>
     <string name="record_sound">录制声音</string>
     <string name="record_sound_description">录制声音。打开后，直播和录像可以使用麦克风。</string>
-    <string name="recordings_title">录像</string>
+    <string name="recordings_title">录像列表</string>
     <string name="recordings_notice">点一条，用其他应用打开。长按可以多选，再导出、分享或删除。</string>
     <string name="recordings_empty_mark">录</string>
     <string name="recordings_empty_title">还没有录像</string>
-    <string name="recordings_empty_body">开始连续或事件录像后，完整的片段会出现在这里。</string>
+    <string name="recordings_empty_body">开始录制后，画面变动、声音或定时触发的片段都会按日期出现在这里</string>
     <string name="recordings_no_storage_title">没有可用的存储</string>
     <string name="recordings_no_storage_body">检查手机存储后再试。卸载应用会删除还没导出的录像。</string>
     <string name="recording_export">导出</string>

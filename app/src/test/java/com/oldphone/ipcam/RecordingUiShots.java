@@ -35,7 +35,7 @@ import java.util.Properties;
  */
 @RunWith(RobolectricTestRunner.class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = 33, qualifiers = "w360dp-h760dp-port-xxhdpi")
+@Config(sdk = 33, qualifiers = "w360dp-h800dp-port-xxhdpi")
 public class RecordingUiShots {
     static {
         System.setProperty("roborazzi.test.record", "true");
@@ -44,81 +44,78 @@ public class RecordingUiShots {
     @Test public void light() throws Exception { capture("light"); }
 
     @Test
-    @Config(sdk = 33, qualifiers = "w360dp-h760dp-port-night-xxhdpi")
+    @Config(sdk = 33, qualifiers = "w360dp-h800dp-port-night-xxhdpi")
     public void dark() throws Exception { capture("dark"); }
 
     private void capture(String theme) throws Exception {
-        prepare();
-        Prefs.setInt(Prefs.KEY_RECORDING, 2);
-        Prefs.setBool(Prefs.KEY_MOTION, true);
-        Prefs.setBool(Prefs.KEY_SOUND, true);
-        Prefs.setBool(Prefs.KEY_MICROPHONE, true);
-        seedToday();
-        ActivityControllerHold<MainActivity> main = launch(MainActivity.class);
-        try {
-            settle(8);
-            check(contains(root(main.activity), "录制声音"), "main screen is missing 录制声音");
-            check(contains(root(main.activity), "开始"), "main screen is missing the start button");
-            check(contains(root(main.activity), "录制设置"), "main screen is missing the settings card");
-            check(contains(root(main.activity), "录像列表"), "main screen is missing the library card");
-            check(contains(root(main.activity), "画面与推流"), "main screen is missing the stream card");
-            check(contains(root(main.activity), "事件录像 · 画面+声音"), "recording card has no status");
-            waitUntil(root(main.activity), "今天 3 段", 40);
-            check(main.activity.findViewById(R.id.settingsPanel).getVisibility() == View.GONE,
-                    "quality settings are still on the home screen");
-            scrollContent(main.activity, file(theme, "main"));
-        } finally { main.close(); }
+        org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.class, "MODEL", "旧手机 Pixel 3");
+        home(theme, "home-idle", false, false, false);
+        home(theme, "home-streaming", true, false, false);
+        home(theme, "home-recording", false, true, false);
+        home(theme, "home-stream-rec", true, true, false);
+        home(theme, "home-paused", true, false, true);
+        home(theme, "home-res", true, false, false);
 
         prepare();
-        Intent streamIntent = new Intent();
-        streamIntent.putExtra(MainActivity.EXTRA_STREAM_PAGE, true);
-        ActivityControllerHold<MainActivity> stream = launch(MainActivity.class, streamIntent);
+        screenNumbers();
+        Intent settings = new Intent();
+        ActivityControllerHold<RecordingSettingsActivity> plain = launch(RecordingSettingsActivity.class, settings);
         try {
-            settle(8);
-            check(contains(root(stream.activity), "画面与推流"), "stream page has no title");
-            check(contains(root(stream.activity), "画质与输出"), "stream page is missing quality");
-            check(contains(root(stream.activity), "锁定当前方向"), "stream page is missing orientation lock");
-            check(stream.activity.findViewById(R.id.cbOrientationLock) instanceof CompoundButton,
-                    "orientation lock is not a switch");
-            check(!(stream.activity.findViewById(R.id.cbOrientationLock) instanceof android.widget.CheckBox),
-                    "orientation lock is still a checkbox");
-            check(stream.activity.findViewById(R.id.previewPanel).getVisibility() == View.GONE,
-                    "stream page still shows the preview");
-            scrollContent(stream.activity, file(theme, "stream"));
-        } finally { stream.close(); }
+            settle(6);
+            check(contains(root(plain.activity), "开始录制"), "settings are missing 开始录制");
+            check(contains(root(plain.activity), "满足任一"), "settings are missing 满足任一");
+            check(contains(root(plain.activity), "画面变动"), "settings are missing motion");
+            scrollContentOf(plain.activity, file(theme, "settings"));
+        } finally { plain.close(); }
 
         prepare();
-        Prefs.setInt(Prefs.KEY_RECORDING, 2);
-        Prefs.setBool(Prefs.KEY_SOUND, true);
-        Prefs.setBool(Prefs.KEY_MICROPHONE, false);
-        ActivityControllerHold<RecordingSettingsActivity> settings = launch(RecordingSettingsActivity.class);
+        screenNumbers();
+        ScreenSnapshot.brightness = 42;
+        Intent light = new Intent();
+        light.putExtra(RecordingSettingsActivity.EXTRA_PAGE_SHOT, "settings-light");
+        ActivityControllerHold<RecordingSettingsActivity> lightPage = launch(RecordingSettingsActivity.class, light);
         try {
-            settle(8);
-            check(contains(root(settings.activity), "录制方式"), "settings are missing the mode card");
-            check(contains(root(settings.activity), "画面变动"), "settings are missing motion");
-            check(contains(root(settings.activity), "声音触发"), "settings are missing sound");
-            check(!contains(root(settings.activity), "录像里保留声音"), "file-audio switch is still shown");
-            CompoundButton sound = labeled(root(settings.activity), "声音触发");
-            check(sound != null && !sound.isEnabled(), "sound trigger stays enabled while mic is off");
-            check(contains(root(settings.activity), "请先打开主界面的「录制声音」"),
-                    "disabled sound trigger has no explanation");
-            content(settings.activity, file(theme, "settings"));
-            Button advanced = button(root(settings.activity), "展开高级");
-            check(advanced != null, "advanced section is missing its expand button");
-            advanced.performClick();
-            settle(4);
-            check(contains(root(settings.activity), "分段"), "advanced section is missing segments");
-            check(contains(root(settings.activity), "画质"), "advanced section is missing picture quality");
-            check(contains(root(settings.activity), "定时"), "advanced section is missing the schedule");
-            content(settings.activity, file(theme, "settings-advanced"));
-        } finally { settings.close(); }
+            settle(6);
+            check(contains(root(lightPage.activity), "光感控制录制"), "light panel is missing");
+            check(contains(root(lightPage.activity), "画面亮度"), "frame method is missing");
+            scrollContentOf(lightPage.activity, file(theme, "settings-light"));
+        } finally { lightPage.close(); }
+
+        prepare();
+        screenNumbers();
+        ScreenSnapshot.brightness = 42;
+        Intent recording = new Intent();
+        recording.putExtra(RecordingSettingsActivity.EXTRA_PAGE_SHOT, "settings-recording");
+        ActivityControllerHold<RecordingSettingsActivity> recordingPage = launch(RecordingSettingsActivity.class, recording);
+        try {
+            settle(6);
+            check(contains(root(recordingPage.activity), "停止录制"), "recording card is not active");
+            check(contains(root(recordingPage.activity), "全部满足"), "match-all is missing");
+            check(contains(root(recordingPage.activity), "光线传感器"), "sensor method is missing");
+            scrollContentOf(recordingPage.activity, file(theme, "settings-recording"));
+        } finally { recordingPage.close(); }
+
+        prepare();
+        screenNumbers();
+        ScreenSnapshot.usedSpace = "37.6 GB";
+        ScreenSnapshot.freeSpace = "23.4 GB";
+        ScreenSnapshot.usedPercent = 62;
+        Intent advanced = new Intent();
+        advanced.putExtra(RecordingSettingsActivity.EXTRA_PAGE_SHOT, "settings-advanced");
+        ActivityControllerHold<RecordingSettingsActivity> advancedPage = launch(RecordingSettingsActivity.class, advanced);
+        try {
+            settle(6);
+            check(contains(root(advancedPage.activity), "存储空间"), "advanced storage is missing");
+            check(contains(root(advancedPage.activity), "自动清理"), "advanced cleanup is missing");
+            scrollContentOf(advancedPage.activity, file(theme, "settings-advanced"));
+        } finally { advancedPage.close(); }
 
         prepare();
         clearRecordings();
         ActivityControllerHold<RecordingsActivity> empty = launch(RecordingsActivity.class);
         try {
             waitUntil(root(empty.activity), "还没有录像", 40);
-            window(empty.activity, file(theme, "recordings-empty"));
+            window(empty.activity, file(theme, "list-empty"));
         } finally { empty.close(); }
 
         prepare();
@@ -127,25 +124,119 @@ public class RecordingUiShots {
         try {
             waitUntil(root(list.activity), "今天", 40);
             waitUntil(root(list.activity), "画面变动", 20);
-            waitUntil(root(list.activity), "昨天", 20);
-            window(list.activity, file(theme, "recordings"));
+            waitUntil(root(list.activity), "光感触发", 20);
+            window(list.activity, file(theme, "list"));
             ListView rows = (ListView) list.activity.findViewById(R.id.recordingList);
             check(rows.getOnItemLongClickListener() != null, "recordings list has no long-press");
             int clip = firstClip(rows);
             rows.getOnItemLongClickListener().onItemLongClick(rows, rows.getChildAt(clip), clip, clip);
             settle(4);
-            check(contains(root(list.activity), "已选 1"), "multi-select did not open");
+            check(contains(root(list.activity), "已选择 1"), "multi-select did not open");
             check(contains(root(list.activity), "导出"), "multi-select is missing export");
-            window(list.activity, file(theme, "recordings-selected"));
+            window(list.activity, file(theme, "list-select"));
         } finally { list.close(); }
+
+        prepare();
+        screenNumbers();
+        Prefs.setOutputSize(1920, 1080);
+        Intent stream = new Intent();
+        stream.putExtra(MainActivity.EXTRA_STREAM_PAGE, true);
+        stream.putExtra(MainActivity.EXTRA_PAGE_SHOT, "stream");
+        ActivityControllerHold<MainActivity> streamPage = launch(MainActivity.class, stream);
+        try {
+            settle(6);
+            check(contains(root(streamPage.activity), "画面与推流"), "stream page has no title");
+            check(contains(root(streamPage.activity), "推流分辨率"), "stream page is missing resolution");
+            check(contains(root(streamPage.activity), "两路同时推"), "stream page is missing both addresses");
+            check(contains(root(streamPage.activity), "推送音频到 HA"), "HA audio row is missing");
+            scrollContentOf(streamPage.activity, file(theme, "stream"));
+        } finally { streamPage.close(); }
+
+        prepare();
+        screenNumbers();
+        CameraStreamService.running = true;
+        CameraStreamService.streamSinceMs = System.currentTimeMillis() - (83 * 60 + 45) * 1000L;
+        Prefs.setInt(Prefs.KEY_MODE, Prefs.MODE_BOTH);
+        Prefs.setBool(Prefs.KEY_STREAM_LIGHT, true);
+        Prefs.setOutputSize(1920, 1080);
+        Intent push = new Intent();
+        push.putExtra(MainActivity.EXTRA_STREAM_PAGE, true);
+        push.putExtra(MainActivity.EXTRA_PAGE_SHOT, "stream-push");
+        ActivityControllerHold<MainActivity> pushPage = launch(MainActivity.class, push);
+        try {
+            settle(6);
+            check(contains(root(pushPage.activity), "光感控制推流"), "stream light switch is missing");
+            check(contains(root(pushPage.activity), "去录制设置调整"), "light summary link is missing");
+            scrollContentOf(pushPage.activity, file(theme, "stream-push"));
+        } finally { pushPage.close(); }
+    }
+
+    private void home(String theme, String name, boolean streaming, boolean recording, boolean paused) throws Exception {
+        prepare();
+        screenNumbers();
+        Prefs.setOutputSize(1920, 1080);
+        Prefs.setBool(Prefs.KEY_MICROPHONE, true);
+        Prefs.setBool(Prefs.KEY_MOTION, true);
+        Prefs.setBool(Prefs.KEY_SOUND, true);
+        Prefs.setInt(Prefs.KEY_MODE, streaming ? Prefs.MODE_BOTH : Prefs.MODE_LOCAL);
+        if (streaming) {
+            CameraStreamService.running = true;
+            CameraStreamService.streamSinceMs = System.currentTimeMillis() - (1 * 3600 + 23 * 60 + 45) * 1000L;
+        }
+        if (recording) {
+            CameraStreamService.recordingNow = true;
+            CameraStreamService.recordingSinceMs = System.currentTimeMillis() - (12 * 60 + 34) * 1000L;
+        }
+        if (paused) {
+            Prefs.setBool(Prefs.KEY_STREAM_LIGHT, true);
+            Prefs.setStr(Prefs.KEY_LIGHT_METHOD, LightPolicy.SENSOR);
+            ScreenSnapshot.brightness = 12;
+            CameraStreamService.lightPaused = true;
+        }
+        Intent intent = new Intent();
+        if ("home-res".equals(name)) intent.putExtra(MainActivity.EXTRA_PAGE_SHOT, "home-res");
+        ActivityControllerHold<MainActivity> page = launch(MainActivity.class, intent);
+        try {
+            settle(6);
+            check(contains(root(page.activity), "开始推流") || contains(root(page.activity), "停止推流"),
+                    name + " is missing the stream button");
+            check(contains(root(page.activity), "录制声音"), name + " is missing 录制声音");
+            if ("home-res".equals(name)) check(contains(root(page.activity), "推流分辨率"), "resolution menu is closed");
+            if (paused) check(contains(root(page.activity), "亮度不足"), "paused state is missing");
+            scrollContentOf(page.activity, file(theme, name));
+        } finally { page.close(); }
+    }
+
+    private static void screenNumbers() {
+        ScreenSnapshot.freeSpace = "23.4 GB";
+        ScreenSnapshot.todayClips = 4;
+        ScreenSnapshot.totalClips = 9;
+        ScreenSnapshot.clock = "2026-10-22 10:06:21";
+        ScreenSnapshot.freezeMotion = true;
+        ScreenSnapshot.brightness = 42;
     }
 
     private static void prepare() {
         Prefs.init(RuntimeEnvironment.getApplication());
         Prefs.setInt(Prefs.KEY_MODE, Prefs.MODE_LOCAL);
         Prefs.setBool(Prefs.KEY_MICROPHONE, true);
-        Prefs.setInt(Prefs.KEY_RECORDING, 0);
-        Prefs.setBool(Prefs.KEY_SOUND, false);
+        Prefs.setInt(Prefs.KEY_RECORDING, 2);
+        Prefs.setBool(Prefs.KEY_MOTION, true);
+        Prefs.setBool(Prefs.KEY_SOUND, true);
+        Prefs.setBool(Prefs.KEY_MATCH_ALL, false);
+        Prefs.setBool(Prefs.KEY_RECORD_LIGHT, false);
+        Prefs.setBool(Prefs.KEY_STREAM_LIGHT, false);
+        Prefs.setStr(Prefs.KEY_LIGHT_METHOD, LightPolicy.FRAME);
+        Prefs.setInt(Prefs.KEY_LIGHT_THRESHOLD, 30);
+        Prefs.setOutputSize(1920, 1080);
+        CameraStreamService.running = false;
+        CameraStreamService.recordingNow = false;
+        CameraStreamService.recordingSinceMs = 0;
+        CameraStreamService.streamSinceMs = 0;
+        CameraStreamService.lightPaused = false;
+        CameraStreamService.frameBrightness = 42;
+        CameraStreamService.sensorBrightness = -1;
+        ScreenSnapshot.clear();
     }
 
     private static void seedToday() throws Exception {
@@ -192,6 +283,8 @@ public class RecordingUiShots {
                 morning + 3_600_000L, 45_000L, "sound", "声响 · 0.4 秒", false, false);
         clip(root, "1729000000003-ccccdddd-1111-2222-3333-444455556666",
                 calendar.getTimeInMillis(), 300_000L, "schedule,sound", "定时", true, true);
+        clip(root, "1729000000004-ddddeeee-1111-2222-3333-444455556667",
+                morning + 4_000_000L, 86_000L, "light", "光感触发", false, false);
     }
 
     private static void clip(File root, String id, long start, long duration, String triggers,
@@ -308,6 +401,32 @@ public class RecordingUiShots {
     private static void window(Activity activity, File file) {
         View decor = activity.getWindow().getDecorView();
         draw(decor, decor.getWidth(), decor.getHeight(), file);
+    }
+
+    private static void scrollContentOf(Activity activity, File file) {
+        ScrollView scroll = findScroll(root(activity));
+        check(scroll != null, "screen has no scroll view");
+        View target = scroll.getChildAt(0);
+        int width = scroll.getWidth();
+        if (width <= 0) width = activity.getWindow().getDecorView().getWidth();
+        target.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        target.layout(0, 0, target.getMeasuredWidth(), target.getMeasuredHeight());
+        draw(target, target.getMeasuredWidth(), target.getMeasuredHeight(), file);
+    }
+
+    private static ScrollView findScroll(View view) {
+        if (view.getVisibility() != View.VISIBLE) return null;
+        if (view instanceof ScrollView) return (ScrollView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                ScrollView found = findScroll(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void scrollContent(Activity activity, File file) {

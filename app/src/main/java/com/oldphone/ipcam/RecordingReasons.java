@@ -10,6 +10,7 @@ public final class RecordingReasons {
         if (text.contains("画面变动") || token(text, "motion")) add(codes, "motion");
         if (text.contains("声响") || text.contains("声音触发") || token(text, "sound")) add(codes, "sound");
         if (scheduledWindow || text.contains("定时") || token(text, "schedule")) add(codes, "schedule");
+        if (text.contains("光感") || token(text, "light")) add(codes, "light");
         return codes.toString();
     }
 

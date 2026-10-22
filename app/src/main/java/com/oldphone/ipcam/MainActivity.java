@@ -69,6 +69,10 @@ public final class MainActivity extends Activity {
     public static final String EXTRA_UI_SHOT = "uishot";
     /** Open the picture and stream page instead of the home screen. */
     public static final String EXTRA_STREAM_PAGE = "stream_page";
+    public static final String EXTRA_PAGE_SHOT = "page_shot";
+    int v22Today;
+    int v22Total;
+    private V22Ui v22;
     /** 直接打开指定 IP 的查看页（可用来给某一路流建桌面快捷方式） */
     public static final String EXTRA_OPEN_IP = "open_ip";
     /** 配合 open_ip：把对方当作「仅 RTSP」设备处理 */
@@ -519,6 +523,10 @@ public final class MainActivity extends Activity {
         llDevices = (LinearLayout) findViewById(R.id.llDevices);
         btnRescan = (TextView) findViewById(R.id.btnRescan);
         addRecordingControls();
+        ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
+        if (content.getChildCount() > 0) content.getChildAt(0).setVisibility(View.GONE);
+        v22 = new V22Ui(this);
+        v22.attach(content);
     }
 
     private void addRecordingControls() {
@@ -585,11 +593,9 @@ public final class MainActivity extends Activity {
 
     private void showStreamPage(boolean show) {
         streamPage = show;
-        previewPanel.setVisibility(show ? View.GONE : View.VISIBLE);
-        View entries = findViewById(R.id.entryPanel);
-        if (entries != null) entries.setVisibility(show ? View.GONE : View.VISIBLE);
-        settingsPanel.setVisibility(show ? View.VISIBLE : View.GONE);
-        if (show && svMain != null) svMain.scrollTo(0, 0);
+        if (previewPanel != null) previewPanel.setVisibility(View.GONE);
+        if (settingsPanel != null) settingsPanel.setVisibility(View.GONE);
+        if (v22 != null) v22.showStream(show);
     }
 
     private void setupSpinners() {
@@ -1418,6 +1424,65 @@ public final class MainActivity extends Activity {
         }
     }
 
+    void v22ToggleStream() {
+        if (StreamControls.streaming()) {
+            StreamControls.setStreaming(this, false);
+            refreshUi();
+            return;
+        }
+        Prefs.setInt(Prefs.KEY_MODE, Prefs.MODE_BOTH);
+        if (CameraStreamService.running) {
+            StreamControls.reconfigure(this);
+            refreshUi();
+            return;
+        }
+        beginStart();
+    }
+
+    void v22SetMic(boolean enabled) {
+        applyMicrophone(enabled);
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetLens(boolean front) {
+        String key = front ? "facing:front" : "facing:back";
+        if (!key.equals(Prefs.cameraKey())) {
+            Prefs.setCameraKey(key);
+            if (CameraStreamService.running) StreamControls.reconfigure(this);
+        }
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetResolution(int width, int height) {
+        boolean streaming = CameraStreamService.running;
+        boolean endsSegment = StreamPresets.followEndsSegment(!Prefs.hasRecordSize(),
+                Prefs.outputWidth(), Prefs.outputHeight(), width, height);
+        Prefs.setOutputSize(width, height);
+        if (streaming) {
+            if (endsSegment || Prefs.hasRecordSize()) StreamControls.reconfigure(this);
+            else StreamControls.reconfigure(this);
+        }
+        Toast.makeText(this, "推流分辨率已切换为 " + StreamPresets.label(width, height)
+                + (streaming ? "，正在重连" : ""), Toast.LENGTH_SHORT).show();
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetRotation(int degrees) {
+        Prefs.setManualRotationDegrees(degrees);
+        applyOrientationSettings();
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22OpenSettings(boolean focusLight) {
+        Intent intent = new Intent(this, RecordingSettingsActivity.class);
+        if (focusLight) intent.putExtra(RecordingSettingsActivity.EXTRA_OPEN_LIGHT, true);
+        startActivity(intent);
+    }
+
+    void v22OpenLibrary() {
+        startActivity(new Intent(this, RecordingsActivity.class));
+    }
+
     private void applyMicrophone(boolean enabled) {
         boolean was = Prefs.microphoneEnabled();
         Prefs.setBool(Prefs.KEY_MICROPHONE, enabled);
@@ -1533,6 +1598,7 @@ public final class MainActivity extends Activity {
         tvLastEvent.setVisibility(event == null || event.length() == 0 ? View.GONE : View.VISIBLE);
         tvLastEvent.setText(event == null ? "" : "最近事件：" + event);
         refreshHomeSummaries();
+        if (v22 != null) v22.refresh();
         refreshPreview(running);
         CameraCatalog.Entry active = CameraStreamService.activeCamera;
         if (active != lastActiveCamera) {
@@ -1574,7 +1640,21 @@ public final class MainActivity extends Activity {
                             getApplicationContext(), target, quota).list()) {
                         items.add(new HomeEntrySummaries.Clip(clip.startTimeMs, clip.bytes));
                     }
+                    int todayCount = 0;
+                    for (HomeEntrySummaries.Clip clip : items) {
+                        if (clip != null) todayCount++;
+                    }
+                    todayCount = HomeEntrySummaries.countToday(items, now, zone);
+                    final int shownToday = todayCount;
+                    final int shownTotal = items.size();
                     text = HomeEntrySummaries.today(items, now, zone);
+                    handler.post(new Runnable() {
+                        @Override public void run() {
+                            v22Today = shownToday;
+                            v22Total = shownTotal;
+                            if (v22 != null) v22.refresh();
+                        }
+                    });
                 } catch (Exception failure) {
                     text = HomeEntrySummaries.today(null, now, zone);
                 }
@@ -1641,6 +1721,7 @@ public final class MainActivity extends Activity {
         ivPreview.setFrame(bmp, frame.geometry);
         ivPreview.setVisibility(View.VISIBLE);
         llPreviewEmpty.setVisibility(View.GONE);
+        if (v22 != null) v22.setPreview(bmp);
     }
 
 

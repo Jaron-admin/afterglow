@@ -1,638 +1,637 @@
 package com.oldphone.ipcam;
 
-import android.Manifest;
 import android.app.Activity;
-import android.app.TimePickerDialog;
-import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.graphics.Color;
 import android.graphics.Typeface;
-import android.os.Build;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.StatFs;
-import android.text.InputType;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
-import android.widget.CompoundButton;
-import android.widget.EditText;
-import android.widget.FrameLayout;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
-import android.widget.Switch;
+import android.widget.SeekBar;
 import android.widget.TextView;
-import android.widget.TimePicker;
 import android.widget.Toast;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 
-/** Common recording controls first. Segment, picture, storage and hours stay folded. */
+/** Recording triggers, light and picture settings. Values are stored as they change. */
 public final class RecordingSettingsActivity extends Activity {
-    private LinearLayout content, sink, recordingPanel, timeRow, advancedPanel;
-    private Spinner mode, target, policy, motionSensitivity, soundSensitivity, bitrate;
-    private Spinner schedule, recordSize;
-    private Choice segment, pre, post, quota, retention, segmentSize;
-    private EditText reserve;
-    private CompoundButton motion, sound;
-    private TextView soundNote;
-    private TextView usage, startTime, endTime, advancedSummary;
-    private Button advancedButton;
-    private final List<String> targetIds = new ArrayList<String>();
-    private final List<Choice> choices = new ArrayList<Choice>();
-    private int nextId = 4100;
-    private int startMinute = 8 * 60, endMinute = 20 * 60, usageGeneration;
-    private boolean destroyed, advancedOpen;
-    private static final int AUDIO_PERMISSION = 41;
-    private static final int[][] RECORD_SIZES = {
-            {0, 0}, {640, 360}, {960, 540}, {1280, 720}
-    };
+    public static final String EXTRA_OPEN_LIGHT = "open_light";
+    public static final String EXTRA_PAGE_SHOT = "page_shot";
+    private static final int[] SEGMENTS = {60, 180, 300, 600, 1800};
+    private ScrollView scroll;
+    private LinearLayout page;
+    private View lightAnchor;
+    private boolean advanced;
+    private boolean suppress;
 
-    @Override public void onCreate(Bundle saved) {
-        super.onCreate(saved);
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
         Prefs.init(this);
         ActivityOrientation.apply(this);
-        ScrollView scroll = new ScrollView(this);
-        content = column();
-        content.setPadding(dp(16), dp(12), dp(16), dp(28));
-        scroll.addView(content);
+        String shot = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_PAGE_SHOT);
+        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LIGHT, false)) {
+            Prefs.setBool(Prefs.KEY_RECORD_LIGHT, true);
+        }
+        if ("settings-light".equals(shot)) Prefs.setBool(Prefs.KEY_RECORD_LIGHT, true);
+        if ("settings-recording".equals(shot)) {
+            Prefs.setBool(Prefs.KEY_MATCH_ALL, true);
+            Prefs.setBool(Prefs.KEY_RECORD_LIGHT, true);
+            Prefs.setStr(Prefs.KEY_LIGHT_METHOD, LightPolicy.SENSOR);
+            CameraStreamService.recordingNow = true;
+            if (CameraStreamService.recordingSinceMs == 0) {
+                CameraStreamService.recordingSinceMs = System.currentTimeMillis() - (12 * 60 + 34) * 1000L;
+            }
+        }
+        advanced = "settings-advanced".equals(shot) || (state != null && state.getBoolean("advanced"));
+        scroll = new ScrollView(this);
+        scroll.setBackgroundColor(color(R.color.background));
+        page = column();
+        page.setPadding(dp(16), dp(8), dp(16), dp(28));
+        scroll.addView(page);
         setContentView(scroll);
-        sink = content;
-        TextView title = label("录制设置", 22);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        title.setPadding(dp(4), dp(8), dp(4), 0);
-        TextView intro = note("常用的放在上面。分段、画质、存储和定时收在高级里。");
-        intro.setPadding(dp(4), 0, dp(4), dp(4));
-
-        card(content, "录制方式", "决定什么时候写文件", "录", R.color.primary);
-        mode = choice("当前", new String[]{"关闭录像", "连续录像", "事件录像"}, Prefs.recordingMode());
-        note("关闭时不写文件。连续录像会一直保存；事件录像只在画面或声音触发时保存。");
-
-        recordingPanel = column();
-        content.addView(recordingPanel);
-        card(recordingPanel, "触发", "画面变动和声音变大。不认人，也不认宠物。", "检", R.color.secondary);
-        motion = check("画面变动", Prefs.motionEnabled());
-        motionSensitivity = choice("画面灵敏度", new String[]{"低", "中", "高"}, Prefs.sensitivity());
-        sound = check("声音触发", Prefs.getBool(Prefs.KEY_SOUND, false));
-        soundNote = note("");
-        soundSensitivity = choice("声音灵敏度", new String[]{"低", "中", "高"}, Prefs.soundSensitivity());
-
-        advancedOpen = saved != null && saved.getBoolean("advanced", false);
-        if (!advancedOpen) advancedOpen = RecordingChoices.indexOf(RecordingChoices.SEGMENT_MIB,
-                Prefs.getInt(Prefs.KEY_SEGMENT_SIZE, 256)) < 0
-                || Prefs.getInt(Prefs.KEY_RESERVE, 256) != 256;
-        LinearLayout advancedHeader = column();
-        advancedHeader.setBackgroundResource(R.drawable.bg_card);
-        advancedHeader.setPadding(dp(16), dp(14), dp(16), dp(8));
-        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(-1, -2);
-        headerParams.topMargin = dp(12);
-        recordingPanel.addView(advancedHeader, headerParams);
-        TextView advancedTitle = new TextView(this);
-        advancedTitle.setText("高级");
-        advancedTitle.setTextSize(16);
-        advancedTitle.setTextColor(color(R.color.on_surface));
-        advancedTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        advancedHeader.addView(advancedTitle);
-        advancedSummary = new TextView(this);
-        advancedSummary.setTextSize(12);
-        advancedSummary.setTextColor(color(R.color.secondary));
-        advancedSummary.setPadding(0, dp(4), 0, dp(4));
-        advancedHeader.addView(advancedSummary);
-        advancedButton = new Button(this);
-        advancedButton.setAllCaps(false);
-        advancedButton.setTextColor(color(R.color.accent_text));
-        advancedButton.setBackgroundResource(R.drawable.bg_field);
-        advancedButton.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View view) {
-                advancedOpen = !advancedOpen;
-                syncAdvanced();
-            }
-        });
-        advancedHeader.addView(advancedButton, new LinearLayout.LayoutParams(-1, dp(48)));
-        advancedPanel = column();
-        recordingPanel.addView(advancedPanel);
-        sink = advancedPanel;
-
-        card(advancedPanel, "分段", "到点后在下一个关键帧切开。", "段", R.color.primary);
-        pre = preset("触发前", RecordingChoices.PRE_ROLL_SECONDS,
-                new String[]{"0 秒", "3 秒", "5 秒", "10 秒", "15 秒", "30 秒"},
-                Prefs.getInt(Prefs.KEY_PRE_ROLL, 5), 0, 30, "预录");
-        post = preset("触发后", RecordingChoices.POST_ROLL_SECONDS,
-                new String[]{"10 秒", "15 秒", "30 秒", "60 秒", "2 分钟", "5 分钟"},
-                Prefs.getInt(Prefs.KEY_POST_ROLL, 15), 1, 600, "延录");
-        note("预录受关键帧和 8 MiB 内存限制，高码率时可能更短。连着触发会并成一段。");
-        segment = preset("每段时长", RecordingChoices.SEGMENT_SECONDS,
-                new String[]{"1 分钟", "5 分钟", "10 分钟", "30 分钟", "60 分钟"},
-                Prefs.getInt(Prefs.KEY_SEGMENT, 300), 10, 3600, "每段时长");
-        segmentSize = preset("单段大小上限", RecordingChoices.SEGMENT_MIB,
-                new String[]{"128 MiB", "256 MiB", "512 MiB", "1024 MiB"},
-                Prefs.getInt(Prefs.KEY_SEGMENT_SIZE, 256), 16, 2048, "单段大小");
-        note("快到单段大小上限时会提前切。");
-
-        card(advancedPanel, "画质", "录像和直播共用一个编码器。", "质", R.color.secondary);
-        String[] recordLabels = new String[RECORD_SIZES.length];
-        recordLabels[0] = "跟随推流（" + Prefs.outputWidth() + "×" + Prefs.outputHeight() + "）";
-        for (int i = 1; i < RECORD_SIZES.length; i++)
-            recordLabels[i] = RECORD_SIZES[i][0] + "×" + RECORD_SIZES[i][1];
-        int recordSelected = 0;
-        for (int i = 1; i < RECORD_SIZES.length; i++) {
-            if (Prefs.recordWidth() == RECORD_SIZES[i][0] && Prefs.recordHeight() == RECORD_SIZES[i][1])
-                recordSelected = i;
+        rebuild();
+        if (Prefs.recordLightEnabled() && ("settings-light".equals(shot)
+                || (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LIGHT, false)))) {
+            scroll.post(new Runnable() {
+                @Override public void run() {
+                    if (lightAnchor != null) scroll.smoothScrollTo(0, Math.max(0, lightAnchor.getTop() - dp(80)));
+                }
+            });
         }
-        recordSize = choice("录像分辨率", recordLabels, recordSelected);
-        int bitrateIndex = Prefs.getInt(Prefs.KEY_BITRATE, 2);
-        if (bitrateIndex < 0 || bitrateIndex >= Prefs.BITRATE_LABELS.length) bitrateIndex = 2;
-        bitrate = choice("码率", Prefs.BITRATE_LABELS, bitrateIndex);
-        note("码率与「画面与推流」是同一项。帧率也在那里。改分辨率会短暂重启采集，并结束当前片段。");
-
-        card(advancedPanel, "存储", "满了以后怎么处理，以及保留多久。", "存", R.color.primary);
-        List<RecordingStore.Target> targets = RecordingStore.targets(this);
-        List<String> labels = new ArrayList<String>();
-        String selected = Prefs.recordingTarget();
-        int selectedIndex = -1;
-        for (RecordingStore.Target item : targets) {
-            if (item.id.equals(selected) || (selected.length() == 0 && !item.external))
-                selectedIndex = labels.size();
-            targetIds.add(item.id);
-            labels.add(item.label);
-        }
-        if (selectedIndex < 0) {
-            selectedIndex = labels.size();
-            targetIds.add(selected);
-            labels.add("所选存储暂不可用");
-        }
-        target = choice("保存位置", labels.toArray(new String[0]), selectedIndex);
-        usage = label("正在读取用量…", 13);
-        usage.setTextColor(color(R.color.secondary));
-        quota = preset("录像总容量", RecordingChoices.QUOTA_GIB,
-                new String[]{"1 GiB", "2 GiB", "5 GiB", "10 GiB", "32 GiB"},
-                Prefs.getInt(Prefs.KEY_QUOTA, 2), 1, 1024, "总容量");
-        policy = choice("空间满了以后", new String[]{"循环盖掉最旧的未锁定录像", "停止录像，全部留下"},
-                Prefs.getBool(Prefs.KEY_LOOP, true) ? 0 : 1);
-        retention = preset("保留多久", RecordingChoices.RETENTION_DAYS,
-                new String[]{"不限", "3 天", "7 天", "14 天", "30 天"},
-                Prefs.getInt(Prefs.KEY_RETENTION, 0), 0, 3650, "保留天数");
-        reserve = number("设备最低剩余空间（MiB，64–16384）", Prefs.KEY_RESERVE, 256);
-        note("只有循环模式才按天数删除。锁定的片段不会被自动清掉。卸载应用会删除这里的录像；卡拔掉或写满时只暂停录像，推流继续。");
-
-        card(advancedPanel, "定时", "结束时刻不算在内，可以跨过半夜。", "时", R.color.secondary);
-        boolean daily = Prefs.recordingSchedule().limited();
-        schedule = choice("录像时间", new String[]{"全天", "每天一段时间"}, daily ? 1 : 0);
-        startMinute = clampMinute(Prefs.getInt(Prefs.KEY_SCHEDULE_START, 8 * 60), 8 * 60);
-        endMinute = clampMinute(Prefs.getInt(Prefs.KEY_SCHEDULE_END, 20 * 60), 20 * 60);
-        if (startMinute == endMinute) endMinute = startMinute == 20 * 60 ? 8 * 60 : 20 * 60;
-        timeRow = column();
-        startTime = timeButton(true);
-        endTime = timeButton(false);
-        showTimes();
-        sink.addView(timeRow);
-        note("时间外会把正在录的这一段在下一个关键帧收尾，然后停录。直播不受影响。");
-
-        sink = content;
-        button("保存并应用", true, new View.OnClickListener() {
-            public void onClick(View view) { save(); }
-        });
-        button("查看录像", false, new View.OnClickListener() {
-            public void onClick(View view) {
-                startActivity(new Intent(RecordingSettingsActivity.this, RecordingsActivity.class));
-            }
-        });
-        button("返回", false, new View.OnClickListener() {
-            public void onClick(View view) { finish(); }
-        });
-
-        mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { syncMode(); }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        schedule.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                syncSchedule();
-                refreshAdvancedSummary();
-            }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        recordSize.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { refreshAdvancedSummary(); }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        target.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) { refreshUsage(); }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        motion.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View view) { syncDetection(); }
-        });
-        sound.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View view) { syncAudio(); }
-        });
-        if (saved != null) {
-            startMinute = saved.getInt("startMinute", startMinute);
-            endMinute = saved.getInt("endMinute", endMinute);
-            showTimes();
-        }
-        syncMode();
-        syncSchedule();
-        syncDetection();
-        syncAudio();
-        syncAdvanced();
-        for (Choice item : choices) item.sync();
-        refreshAdvancedSummary();
-        refreshUsage();
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        syncAudio();
-    }
-
-    @Override protected void onRestoreInstanceState(Bundle state) {
-        super.onRestoreInstanceState(state);
-        syncMode();
-        syncSchedule();
-        syncDetection();
-        syncAudio();
-        syncAdvanced();
-        for (Choice item : choices) item.sync();
-        refreshAdvancedSummary();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
-        state.putInt("startMinute", startMinute);
-        state.putInt("endMinute", endMinute);
-        state.putBoolean("advanced", advancedOpen);
+        state.putBoolean("advanced", advanced);
     }
 
-    @Override protected void onDestroy() {
-        destroyed = true;
-        usageGeneration++;
-        super.onDestroy();
+    private void rebuild() {
+        page.removeAllViews();
+        page.addView(top());
+        page.addView(recordCard());
+        page.addView(section("常用"));
+        page.addView(commonCard());
+        page.addView(gap(advancedCard(), 0, 12, 0, 0));
+        TextView note = caption("建议接通电源并关闭省电优化，避免录制被系统中断。");
+        page.addView(gap(note, 6, 14, 6, 0));
     }
 
-    private void syncMode() {
-        recordingPanel.setVisibility(mode.getSelectedItemPosition() == 0 ? View.GONE : View.VISIBLE);
-    }
-    private void syncSchedule() {
-        timeRow.setVisibility(schedule.getSelectedItemPosition() == 1 ? View.VISIBLE : View.GONE);
-    }
-    private void syncDetection() {
-        motionSensitivity.setEnabled(motion.isChecked());
-    }
-    private void syncAudio() {
-        boolean mic = Prefs.microphoneEnabled();
-        boolean soundOn = RecordingAudio.soundControlsEnabled(mic);
-        sound.setEnabled(soundOn);
-        sound.setAlpha(soundOn ? 1f : 0.38f);
-        sound.setTextColor(color(soundOn ? R.color.on_surface : R.color.on_surface_disabled));
-        boolean level = RecordingAudio.soundSensitivityEnabled(mic, sound.isChecked());
-        soundSensitivity.setEnabled(level);
-        soundSensitivity.setAlpha(level ? 1f : 0.38f);
-        String note = RecordingAudio.soundDisabledNote(mic);
-        soundNote.setText(note);
-        soundNote.setVisibility(note.length() == 0 ? View.GONE : View.VISIBLE);
-    }
-    private void syncAdvanced() {
-        advancedButton.setText(advancedOpen ? "收起高级" : "展开高级");
-        advancedPanel.setVisibility(advancedOpen ? View.VISIBLE : View.GONE);
-    }
-    private void refreshAdvancedSummary() {
-        if (advancedSummary == null || segment == null || quota == null || recordSize == null || schedule == null)
-            return;
-        String when = schedule.getSelectedItemPosition() == 1
-                ? clock(startMinute) + "–" + clock(endMinute) : "全天";
-        advancedSummary.setText(text(segment.spinner) + " · " + text(recordSize) + " · "
-                + text(quota.spinner) + " · " + when);
-    }
-    private void showTimes() {
-        startTime.setText("开始 " + clock(startMinute));
-        endTime.setText("结束 " + clock(endMinute));
-        refreshAdvancedSummary();
-    }
-    private TextView timeButton(final boolean start) {
-        Button button = new Button(this);
-        button.setId(nextId++);
-        button.setAllCaps(false);
-        button.setTextColor(color(R.color.on_surface));
-        button.setBackgroundResource(R.drawable.bg_field);
-        button.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View view) { pickTime(start); }
+    private View top() {
+        LinearLayout block = column();
+        TextView back = text("‹", 24, color(R.color.on_surface), false);
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
-        params.topMargin = dp(8);
-        timeRow.addView(button, params);
-        return button;
-    }
-    private void pickTime(final boolean start) {
-        int minute = start ? startMinute : endMinute;
-        new TimePickerDialog(this, new TimePickerDialog.OnTimeSetListener() {
-            public void onTimeSet(TimePicker view, int hour, int minuteOfHour) {
-                int value = hour * 60 + minuteOfHour;
-                if (start) startMinute = value; else endMinute = value;
-                showTimes();
-            }
-        }, minute / 60, minute % 60, true).show();
+        block.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        TextView title = text("录制设置", 28, color(R.color.on_surface), true);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        block.addView(title);
+        block.addView(caption("决定什么时候录、录成什么样"));
+        return block;
     }
 
-    private void refreshUsage() {
-        if (target == null || usage == null) return;
-        final int position = target.getSelectedItemPosition();
-        if (position < 0 || position >= targetIds.size()) return;
-        final String id = targetIds.get(position);
-        final int token = ++usageGeneration;
-        final long cap = (long) quota.valueOrDefault(Prefs.getInt(Prefs.KEY_QUOTA, 2)) << 30;
-        usage.setText("正在读取用量…");
-        new Thread(new Runnable() {
-            public void run() {
-                String text;
-                try {
-                    FileTarget found = findTarget(id);
-                    if (found == null) text = "所选存储暂不可用";
-                    else {
-                        long used = 0;
-                        RecordingStore store = RecordingStore.open(getApplicationContext(), id, cap);
-                        for (RecordingStore.Clip clip : store.list()) used += clip.bytes;
-                        long free = new StatFs(found.directory.getPath()).getAvailableBytes();
-                        text = "已用 " + amount(used) + " · 上限 " + amount(cap) + " · 设备剩余 " + amount(free);
-                    }
-                } catch (Exception failure) {
-                    text = failure.getMessage() == null ? "暂时读不到用量" : failure.getMessage();
-                }
-                final String shown = text;
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        if (!destroyed && token == usageGeneration) usage.setText(shown);
-                    }
-                });
-            }
-        }, "afterglow-usage").start();
-    }
-    private FileTarget findTarget(String id) {
-        for (RecordingStore.Target item : RecordingStore.targets(getApplicationContext()))
-            if (item.id.equals(id)) return new FileTarget(item.directory);
-        return null;
-    }
-    private static final class FileTarget {
-        final java.io.File directory;
-        FileTarget(java.io.File directory) { this.directory = directory; }
-    }
-
-    private void save() {
-        try {
-            int recordMode = mode.getSelectedItemPosition();
-            boolean daily = schedule.getSelectedItemPosition() == 1;
-            if (daily) RecordingSchedule.daily(startMinute, endMinute);
-            int seg = segment.read();
-            int max = segmentSize.read();
-            int cap = quota.read();
-            int free = read(reserve, 64, 16384, "剩余空间");
-            int days = retention.read();
-            int before = pre.read();
-            int after = post.read();
-            new RecordingOptions(Math.max(1, recordMode), seg, before, after, days,
-                    (long) cap << 30, (long) free << 20, (long) max << 20,
-                    policy.getSelectedItemPosition() == 0,
-                    RecordingAudio.fileAudio(Prefs.microphoneEnabled(),
-                            Prefs.getBool(Prefs.KEY_RECORD_AUDIO, true)));
-            if (recordMode == 2 && !motion.isChecked()
-                    && !(Prefs.microphoneEnabled() && sound.isChecked()))
-                throw new IllegalArgumentException("事件录像需要开启画面变动，或先在主界面打开录制声音再开声音触发");
-            if (recordMode == 0 && Prefs.mode() == Prefs.MODE_LOCAL)
-                throw new IllegalArgumentException("仅本地模式需要开启录像，请先在「画面与推流」更改输出方式");
-            if (Prefs.microphoneEnabled() && Build.VERSION.SDK_INT >= 23
-                    && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION);
-                return;
-            }
-            Prefs.setInt(Prefs.KEY_RECORDING, recordMode);
-            Prefs.setStr(Prefs.KEY_STORAGE, targetIds.get(target.getSelectedItemPosition()));
-            Prefs.setBool(Prefs.KEY_SCHEDULE, daily);
-            Prefs.setInt(Prefs.KEY_SCHEDULE_START, startMinute);
-            Prefs.setInt(Prefs.KEY_SCHEDULE_END, endMinute);
-            Prefs.setInt(Prefs.KEY_SEGMENT, seg);
-            Prefs.setInt(Prefs.KEY_SEGMENT_SIZE, max);
-            Prefs.setInt(Prefs.KEY_QUOTA, cap);
-            Prefs.setInt(Prefs.KEY_RESERVE, free);
-            Prefs.setInt(Prefs.KEY_RETENTION, days);
-            Prefs.setInt(Prefs.KEY_PRE_ROLL, before);
-            Prefs.setInt(Prefs.KEY_POST_ROLL, after);
-            Prefs.setBool(Prefs.KEY_LOOP, policy.getSelectedItemPosition() == 0);
-            Prefs.setBool(Prefs.KEY_MOTION, motion.isChecked());
-            Prefs.setBool(Prefs.KEY_SOUND, sound.isChecked());
-            Prefs.setInt(Prefs.KEY_SENSITIVITY, motionSensitivity.getSelectedItemPosition());
-            Prefs.setInt(Prefs.KEY_SOUND_SENSITIVITY, soundSensitivity.getSelectedItemPosition());
-            int recordIndex = recordSize.getSelectedItemPosition();
-            if (recordIndex >= 0 && recordIndex < RECORD_SIZES.length)
-                Prefs.setRecordSize(RECORD_SIZES[recordIndex][0], RECORD_SIZES[recordIndex][1]);
-            int rate = bitrate.getSelectedItemPosition();
-            if (rate >= 0 && rate < Prefs.BITRATE_LABELS.length) Prefs.setInt(Prefs.KEY_BITRATE, rate);
-            if (CameraStreamService.running) startService(new Intent(this, CameraStreamService.class)
-                    .setAction(CameraStreamService.ACTION_RECONFIGURE));
-            Toast.makeText(this, "录像设置已保存", Toast.LENGTH_SHORT).show();
-            finish();
-        } catch (IllegalArgumentException failure) {
-            Toast.makeText(this, failure.getMessage(), Toast.LENGTH_LONG).show();
-        }
-    }
-
-    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
-        super.onRequestPermissionsResult(request, permissions, grants);
-        if (request != AUDIO_PERMISSION) return;
-        if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) save();
-        else Toast.makeText(this, "未获得麦克风权限。请回到主界面打开「录制声音」并允许麦克风。",
-                Toast.LENGTH_LONG).show();
-    }
-
-    private final class Choice {
-        final Spinner spinner;
-        final EditText custom;
-        final int[] values;
-        final int min, max, fallback;
-        final String name;
-        Choice(Spinner spinner, EditText custom, int[] values, int min, int max, int fallback, String name) {
-            this.spinner = spinner; this.custom = custom; this.values = values;
-            this.min = min; this.max = max; this.fallback = fallback; this.name = name;
-        }
-        void sync() {
-            custom.setVisibility(spinner.getSelectedItemPosition() >= values.length ? View.VISIBLE : View.GONE);
-        }
-        int valueOrDefault(int fallback) {
-            try { return read(); } catch (IllegalArgumentException ignored) { return fallback; }
-        }
-        int read() {
-            int selected = spinner.getSelectedItemPosition();
-            if (selected >= 0 && selected < values.length) return values[selected];
-            return RecordingSettingsActivity.this.read(custom, min, max, name);
-        }
-    }
-
-    private Choice preset(String title, int[] values, String[] labels, int current, int min, int max, String name) {
-        String[] items = new String[labels.length + 1];
-        System.arraycopy(labels, 0, items, 0, labels.length);
-        items[labels.length] = "自定义";
-        int index = RecordingChoices.indexOf(values, current);
-        final Choice choice = new Choice(choice(title, items, index < 0 ? labels.length : index),
-                numberField(String.valueOf(current)), values, min, max, current, name);
-        choice.spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                choice.sync();
-                if (choice == quota) refreshUsage();
-                refreshAdvancedSummary();
-            }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
-        choices.add(choice);
-        choice.sync();
-        return choice;
-    }
-
-    private int read(EditText field, int min, int max, String name) {
-        try {
-            int value = Integer.parseInt(field.getText().toString().trim());
-            if (value >= min && value <= max) return value;
-        } catch (NumberFormatException ignored) { }
-        field.requestFocus();
-        throw new IllegalArgumentException(name + "应在 " + min + "–" + max + " 之间");
-    }
-    private Spinner choice(String title, String[] values, int selected) {
-        label(title, 13);
-        Spinner spinner = new Spinner(this);
-        spinner.setId(nextId++);
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, R.layout.item_spinner, values);
-        adapter.setDropDownViewResource(R.layout.item_spinner_dropdown);
-        spinner.setAdapter(adapter);
-        if (selected < 0 || selected >= values.length) selected = 0;
-        spinner.setSelection(selected);
-        FrameLayout frame = new FrameLayout(this);
-        frame.setBackgroundResource(R.drawable.bg_field);
-        frame.addView(spinner, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
-        params.topMargin = dp(4);
-        sink.addView(frame, params);
-        return spinner;
-    }
-    private EditText number(String title, String key, int fallback) {
-        label(title, 13);
-        return numberField(String.valueOf(Prefs.getInt(key, fallback)));
-    }
-    private EditText numberField(String value) {
-        EditText field = new EditText(this);
-        field.setId(nextId++);
-        field.setInputType(InputType.TYPE_CLASS_NUMBER);
-        field.setSingleLine(true);
-        field.setHint("自定义");
-        field.setText(value);
-        field.setTextColor(color(R.color.on_surface));
-        field.setHintTextColor(color(R.color.on_surface_disabled));
-        field.setBackgroundResource(R.drawable.bg_field);
-        field.setPadding(dp(14), 0, dp(14), 0);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
-        params.topMargin = dp(4);
-        sink.addView(field, params);
-        return field;
-    }
-    private Switch check(String title, boolean checked) {
-        Switch box = new Switch(this);
-        box.setId(nextId++);
-        box.setText(title);
-        box.setChecked(checked);
-        box.setMinHeight(dp(48));
-        box.setTextColor(color(R.color.on_surface));
-        sink.addView(box);
-        return box;
-    }
-    private Button button(String title, boolean primary, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setId(nextId++);
-        button.setAllCaps(false);
-        button.setText(title);
-        button.setOnClickListener(listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(48));
-        params.topMargin = dp(10);
-        if (primary) {
-            button.setBackgroundResource(R.drawable.bg_btn_primary);
-            button.setTextColor(color(R.color.on_primary));
+    private View recordCard() {
+        boolean recording = CameraStreamService.recordingNow;
+        LinearLayout card = card();
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        TextView status = text(recording ? "录制中 · " + elapsed() : "未在录制", 16,
+                color(recording ? R.color.ink_red : R.color.on_surface), true);
+        card.addView(status);
+        card.addView(caption(recording ? "满足触发条件时自动分段保存 · 今天已存 " + today() + " 段"
+                : "开始后，按下方触发条件自动录像"));
+        TextView button = text(recording ? "停止录制" : "开始录制", 17, Color.WHITE, true);
+        button.setGravity(Gravity.CENTER);
+        button.setMinimumHeight(dp(52));
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(26));
+        if (recording) {
+            shape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+            shape.setColors(new int[]{color(R.color.recording_top), color(R.color.danger)});
+            button.setTextColor(Color.WHITE);
         } else {
-            button.setBackgroundResource(R.drawable.bg_field);
-            button.setTextColor(color(R.color.secondary));
+            shape.setColor(color(R.color.tonal_red));
+            button.setTextColor(color(R.color.ink_red));
         }
-        sink.addView(button, params);
+        button.setBackground(shape);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        lp.topMargin = dp(14);
+        button.setLayoutParams(lp);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                boolean start = !CameraStreamService.recordingNow;
+                if (start && triggerCount() == 0 && Prefs.recordingMode() != 1) {
+                    Toast.makeText(RecordingSettingsActivity.this, "请至少选择一个触发条件", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                try {
+                    StreamControls.setRecording(RecordingSettingsActivity.this, start);
+                } catch (Throwable failure) {
+                    Toast.makeText(RecordingSettingsActivity.this, "录制未能开始", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (!start) CameraStreamService.recordingNow = false;
+                Toast.makeText(RecordingSettingsActivity.this,
+                        start ? "已开始录制" : "录制已停止，片段已保存", Toast.LENGTH_SHORT).show();
+                rebuild();
+            }
+        });
+        card.addView(button);
+        return card;
+    }
+
+    private View commonCard() {
+        LinearLayout card = card();
+        card.addView(labeled("触发方式", "可多选，并选择组合方式"));
+        LinearLayout chips = row();
+        chips.setPadding(dp(16), 0, dp(16), 0);
+        chips.addView(trigger("画面变动", Prefs.motionEnabled(), R.color.tonal_orange, R.color.ink_orange, new View.OnClickListener() {
+            @Override public void onClick(View v) { toggle(Prefs.KEY_MOTION, !Prefs.motionEnabled()); }
+        }));
+        chips.addView(trigger("声音", Prefs.soundSelected(), R.color.tonal_cyan, R.color.ink_cyan, new View.OnClickListener() {
+            @Override public void onClick(View v) { toggle(Prefs.KEY_SOUND, !Prefs.soundSelected()); }
+        }));
+        chips.addView(trigger("定时", Prefs.getBool(Prefs.KEY_SCHEDULE, false), R.color.tonal_purple, R.color.ink_purple, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                toggle(Prefs.KEY_SCHEDULE, !Prefs.getBool(Prefs.KEY_SCHEDULE, false));
+            }
+        }));
+        chips.addView(trigger("光感", Prefs.recordLightEnabled(), R.color.tonal_amber, R.color.ink_amber, new View.OnClickListener() {
+            @Override public void onClick(View v) { toggle(Prefs.KEY_RECORD_LIGHT, !Prefs.recordLightEnabled()); }
+        }));
+        card.addView(chips);
+        if (Prefs.getBool(Prefs.KEY_SCHEDULE, false)) {
+            TextView window = caption("每天 " + clock(Prefs.getInt(Prefs.KEY_SCHEDULE_START, 22 * 60))
+                    + " – " + clock(Prefs.getInt(Prefs.KEY_SCHEDULE_END, 7 * 60)) + " 持续录制");
+            window.setTextColor(color(R.color.ink_purple));
+            window.setPadding(dp(16), dp(8), dp(16), 0);
+            card.addView(window);
+        }
+        card.addView(matchSegment());
+        card.addView(explanation());
+        if (Prefs.recordLightEnabled()) card.addView(lightPanel());
+        card.addView(sensitivity());
+        card.addView(choiceRow("分段时长", "长录像按此时长切分保存", segmentLabel(), new View.OnClickListener() {
+            @Override public void onClick(View v) { pickSegment(); }
+        }));
+        boolean follow = !Prefs.hasRecordSize();
+        card.addView(choiceRow("录制分辨率", StreamPresets.recordCaption(follow),
+                StreamPresets.recordLabel(follow, Prefs.recordWidth(), Prefs.recordHeight(),
+                        Prefs.outputWidth(), Prefs.outputHeight()), new View.OnClickListener() {
+                    @Override public void onClick(View v) { pickRecordSize(); }
+                }));
+        card.addView(choiceRow("画质", "码率越高越清晰，也越占空间",
+                StreamPresets.qualityLabel(Prefs.getInt(Prefs.KEY_BITRATE, 2)), new View.OnClickListener() {
+                    @Override public void onClick(View v) { pickQuality(); }
+                }));
+        return card;
+    }
+
+    private View matchSegment() {
+        LinearLayout seg = row();
+        seg.setBackground(round(color(R.color.surface_2), 14));
+        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(16);
+        lp.rightMargin = dp(16);
+        lp.topMargin = dp(12);
+        seg.setLayoutParams(lp);
+        seg.addView(segmentButton("满足任一", !Prefs.matchAll(), new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Prefs.setBool(Prefs.KEY_MATCH_ALL, false);
+                applyIfRunning();
+                rebuild();
+            }
+        }), weight());
+        seg.addView(segmentButton("全部满足", Prefs.matchAll(), new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Prefs.setBool(Prefs.KEY_MATCH_ALL, true);
+                applyIfRunning();
+                rebuild();
+            }
+        }), weight());
+        return seg;
+    }
+
+    private View explanation() {
+        TriggerPolicy.Selection selection = new TriggerPolicy.Selection(
+                Prefs.motionEnabled(), Prefs.soundSelected(),
+                Prefs.getBool(Prefs.KEY_SCHEDULE, false), Prefs.recordLightEnabled(), Prefs.matchAll());
+        TextView line = caption(TriggerPolicy.explanation(selection));
+        line.setPadding(dp(16), dp(8), dp(16), dp(8));
+        return line;
+    }
+
+    private View lightPanel() {
+        LinearLayout block = column();
+        lightAnchor = block;
+        V22Ui.PillSwitch toggle = new V22Ui.PillSwitch(this, false);
+        toggle.setOn(true);
+        toggle.setOnChanged(new V22Ui.PillSwitch.Listener() {
+            @Override public void onChanged(boolean on) {
+                if (suppress || on) return;
+                Prefs.setBool(Prefs.KEY_RECORD_LIGHT, false);
+                applyIfRunning();
+                rebuild();
+            }
+        });
+        block.addView(settingHead("光感控制录制", "够亮才触发 · 阈值 " + Prefs.lightThreshold() + "%", toggle));
+        TextView method = text("感光方式", 13, color(R.color.on_surface), true);
+        method.setPadding(dp(16), dp(4), dp(16), dp(6));
+        block.addView(method);
+        LinearLayout seg = row();
+        seg.setBackground(round(color(R.color.surface_2), 14));
+        seg.setPadding(dp(3), dp(3), dp(3), dp(3));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(40));
+        lp.leftMargin = dp(16);
+        lp.rightMargin = dp(16);
+        seg.setLayoutParams(lp);
+        seg.addView(segmentButton("画面亮度", LightPolicy.FRAME.equals(Prefs.lightMethod()), new View.OnClickListener() {
+            @Override public void onClick(View v) { setMethod(LightPolicy.FRAME); }
+        }), weight());
+        seg.addView(segmentButton("光线传感器", LightPolicy.SENSOR.equals(Prefs.lightMethod()), new View.OnClickListener() {
+            @Override public void onClick(View v) { setMethod(LightPolicy.SENSOR); }
+        }), weight());
+        block.addView(seg);
+        TextView cap = caption(LightPolicy.SENSOR.equals(Prefs.lightMethod())
+                ? "用手机自带感光元件。亮度不够时推流和录制都暂停，可关相机省电。"
+                : "按镜头画面计算。亮度不够时只暂停录制，推流继续，相机保持开启。");
+        cap.setPadding(dp(16), dp(8), dp(16), 0);
+        block.addView(cap);
+        int brightness = brightness();
+        boolean met = LightPolicy.satisfied(brightness, Prefs.lightThreshold());
+        TextView read = text("当前亮度 " + (brightness < 0 ? "—" : brightness + "%")
+                + "   " + (met ? "已满足" : "未满足"), 14, color(R.color.on_surface), true);
+        read.setPadding(dp(16), dp(10), dp(16), dp(4));
+        block.addView(read);
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(100);
+        suppress = true;
+        slider.setProgress(Prefs.lightThreshold());
+        suppress = false;
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser || suppress) return;
+                Prefs.setInt(Prefs.KEY_LIGHT_THRESHOLD, progress);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                applyIfRunning();
+                rebuild();
+            }
+        });
+        block.addView(slider);
+        TextView ticks = caption("暗 0%          ▮ 当前亮度          亮 100%");
+        ticks.setPadding(dp(16), 0, dp(16), dp(4));
+        block.addView(ticks);
+        TextView rule = caption("画面亮于 " + Prefs.lightThreshold() + "% 时触发");
+        rule.setPadding(dp(16), 0, dp(16), dp(12));
+        block.addView(rule);
+        return block;
+    }
+
+    private View sensitivity() {
+        LinearLayout block = column();
+        int percent = Prefs.sensitivityPercent();
+        String band = percent >= 70 ? "高" : percent >= 40 ? "中" : "低";
+        block.addView(settingHead("灵敏度", "越高越容易被小动作触发",
+                text(band + " · " + percent, 14, color(R.color.ink_orange), true)));
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(100);
+        slider.setProgress(percent);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                Prefs.setSensitivityPercent(progress);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                applyIfRunning();
+                rebuild();
+            }
+        });
+        block.addView(slider);
+        TextView ticks = caption("低          中          高");
+        ticks.setPadding(dp(16), 0, dp(16), dp(8));
+        block.addView(ticks);
+        return block;
+    }
+
+    private View advancedCard() {
+        LinearLayout card = card();
+        TextView head = text("高级    " + (advanced ? "▴" : "▾"), 16, color(R.color.on_surface), true);
+        head.setPadding(dp(16), dp(16), dp(16), dp(4));
+        head.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                advanced = !advanced;
+                rebuild();
+            }
+        });
+        card.addView(head);
+        card.addView(caption("自动清理、帧率、存储空间"));
+        if (!advanced) return card;
+        String used = ScreenSnapshot.usedSpace != null ? ScreenSnapshot.usedSpace : usedLabel();
+        String free = ScreenSnapshot.freeSpace != null ? ScreenSnapshot.freeSpace : freeLabel();
+        card.addView(settingHead("存储空间", "已用 " + used + " · 剩余 " + free, null));
+        View bar = new View(this);
+        int percent = ScreenSnapshot.usedPercent >= 0 ? ScreenSnapshot.usedPercent : 62;
+        GradientDrawable track = round(color(R.color.surface_3), 3);
+        bar.setBackground(track);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(6));
+        barLp.leftMargin = dp(16);
+        barLp.rightMargin = dp(16);
+        bar.setLayoutParams(barLp);
+        card.addView(bar);
+        boolean clean = Prefs.getBool(Prefs.KEY_LOOP, true);
+        int days = Prefs.getInt(Prefs.KEY_RETENTION, 0);
+        if (days <= 0) days = 7;
+        V22Ui.PillSwitch cleanSwitch = new V22Ui.PillSwitch(this, false);
+        cleanSwitch.setOn(clean);
+        final int keepDays = days;
+        cleanSwitch.setOnChanged(new V22Ui.PillSwitch.Listener() {
+            @Override public void onChanged(boolean on) {
+                Prefs.setBool(Prefs.KEY_LOOP, on);
+                if (on && Prefs.getInt(Prefs.KEY_RETENTION, 0) <= 0) Prefs.setInt(Prefs.KEY_RETENTION, keepDays);
+                rebuild();
+            }
+        });
+        card.addView(settingHead("自动清理", clean ? "保留最近 " + keepDays + " 天，空间不足时删最旧的" : "已关闭，需手动删除", cleanSwitch));
+        card.addView(choiceRow("帧率", "越低越省电、省空间", fpsLabel(), new View.OnClickListener() {
+            @Override public void onClick(View v) { pickFps(); }
+        }));
+        return card;
+    }
+
+    private void toggle(String key, boolean value) {
+        Prefs.setBool(key, value);
+        if (Prefs.recordingMode() == 1) Prefs.setInt(Prefs.KEY_RECORDING, 2);
+        applyIfRunning();
+        rebuild();
+    }
+
+    private void setMethod(String method) {
+        Prefs.setStr(Prefs.KEY_LIGHT_METHOD, method);
+        applyIfRunning();
+        rebuild();
+    }
+
+    private void pickSegment() {
+        String[] labels = new String[SEGMENTS.length];
+        int selected = 2;
+        int current = Prefs.getInt(Prefs.KEY_SEGMENT, 300);
+        for (int i = 0; i < SEGMENTS.length; i++) {
+            labels[i] = (SEGMENTS[i] / 60) + " 分钟";
+            if (SEGMENTS[i] == current) selected = i;
+        }
+        choose("分段时长", labels, selected, new DialogInterface.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                Prefs.setInt(Prefs.KEY_SEGMENT, SEGMENTS[which]);
+                applyIfRunning();
+                rebuild();
+            }
+        });
+    }
+
+    private void pickRecordSize() {
+        final String[] labels = {"跟随推流", "720p", "1080p", "1440p"};
+        int selected = 0;
+        if (Prefs.hasRecordSize()) {
+            int index = StreamPresets.indexOf(Prefs.recordWidth(), Prefs.recordHeight());
+            selected = index < 0 ? 0 : index + 1;
+        }
+        choose("录制分辨率", labels, selected, new DialogInterface.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                if (which == 0) Prefs.setRecordSize(0, 0);
+                else Prefs.setRecordSize(StreamPresets.SIZES[which - 1][0], StreamPresets.SIZES[which - 1][1]);
+                applyIfRunning();
+                rebuild();
+            }
+        });
+    }
+
+    private void pickQuality() {
+        final String[] labels = {"标准", "高", "超高"};
+        String current = StreamPresets.qualityLabel(Prefs.getInt(Prefs.KEY_BITRATE, 2));
+        int selected = "标准".equals(current) ? 0 : "超高".equals(current) ? 2 : 1;
+        choose("画质", labels, selected, new DialogInterface.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                Prefs.setInt(Prefs.KEY_BITRATE, StreamPresets.bitrateIndex(labels[which]));
+                applyIfRunning();
+                rebuild();
+            }
+        });
+    }
+
+    private void pickFps() {
+        final int[] choices = {15, 24, 30};
+        String[] labels = {"15 fps", "24 fps", "30 fps"};
+        int current = Prefs.fps();
+        int selected = current >= 30 ? 2 : current == 24 ? 1 : 0;
+        choose("帧率", labels, selected, new DialogInterface.OnClickListener() {
+            @Override public void onClick(DialogInterface dialog, int which) {
+                int fps = choices[which];
+                int index = 2;
+                for (int i = 0; i < Prefs.FPS_OPTIONS.length; i++) if (Prefs.FPS_OPTIONS[i] == fps) index = i;
+                Prefs.setInt(Prefs.KEY_FPS, index);
+                applyIfRunning();
+                rebuild();
+            }
+        });
+    }
+
+    private void choose(String title, String[] labels, int selected, DialogInterface.OnClickListener click) {
+        new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, selected, click).show();
+    }
+
+    private void applyIfRunning() {
+        if (CameraStreamService.running) {
+            try { StreamControls.reconfigure(this); }
+            catch (Throwable ignored) { }
+        }
+    }
+
+    private View choiceRow(String title, String cap, String value, View.OnClickListener click) {
+        LinearLayout row = (LinearLayout) settingHead(title, cap, text(value + " ›", 14, color(R.color.on_surface_variant), false));
+        row.setOnClickListener(click);
+        return row;
+    }
+
+    private View settingHead(String title, String cap, View trailing) {
+        LinearLayout row = row();
+        row.setMinimumHeight(dp(64));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(8), dp(16), dp(8));
+        LinearLayout text = column();
+        text.addView(this.text(title, 16, color(R.color.on_surface), true));
+        if (cap != null && cap.length() > 0) text.addView(caption(cap));
+        row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (trailing != null) row.addView(trailing);
+        return row;
+    }
+
+    private View labeled(String title, String cap) {
+        LinearLayout block = column();
+        block.setPadding(dp(16), dp(14), dp(16), dp(8));
+        block.addView(text(title, 16, color(R.color.on_surface), true));
+        block.addView(caption(cap));
+        return block;
+    }
+
+    private TextView trigger(String label, boolean on, int well, int ink, View.OnClickListener click) {
+        TextView chip = text((on ? "✓ " : "") + label, 14, color(on ? ink : R.color.on_surface), on);
+        chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        GradientDrawable shape = round(on ? color(well) : Color.TRANSPARENT, 17);
+        if (!on) shape.setStroke(dp(1), color(R.color.outline));
+        chip.setBackground(shape);
+        chip.setOnClickListener(click);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
+        lp.rightMargin = dp(8);
+        chip.setLayoutParams(lp);
+        return chip;
+    }
+
+    private TextView segmentButton(String label, boolean on, View.OnClickListener click) {
+        TextView button = text(label, 14, color(on ? R.color.on_surface : R.color.on_surface_variant), on);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(34));
+        button.setBackground(on ? round(color(R.color.surface), 11) : null);
+        button.setOnClickListener(click);
         return button;
     }
-    private void card(LinearLayout host, String title, String summary, String mark, int markColor) {
+
+    private String segmentLabel() {
+        int seconds = Prefs.getInt(Prefs.KEY_SEGMENT, 300);
+        if (seconds % 60 == 0) return (seconds / 60) + " 分钟";
+        return seconds + " 秒";
+    }
+
+    private String fpsLabel() {
+        return Prefs.fps() + " fps";
+    }
+
+    private static String clock(int minute) {
+        int value = ((minute % 1440) + 1440) % 1440;
+        return String.format(Locale.US, "%02d:%02d", value / 60, value % 60);
+    }
+
+    private static String elapsed() {
+        long ms = CameraStreamService.recordingSinceMs <= 0 ? 0
+                : System.currentTimeMillis() - CameraStreamService.recordingSinceMs;
+        long seconds = Math.max(0, ms) / 1000L;
+        return String.format(Locale.US, "%02d:%02d:%02d", seconds / 3600L, (seconds % 3600L) / 60L, seconds % 60L);
+    }
+
+    private int today() { return Math.max(0, v22Fallback()); }
+
+    private int v22Fallback() {
+        return ScreenSnapshot.todayClips >= 0 ? ScreenSnapshot.todayClips : 0;
+    }
+
+    private int brightness() {
+        if (ScreenSnapshot.brightness >= 0) return ScreenSnapshot.brightness;
+        return LightPolicy.SENSOR.equals(Prefs.lightMethod())
+                ? CameraStreamService.sensorBrightness : CameraStreamService.frameBrightness;
+    }
+
+    private static int triggerCount() {
+        return (Prefs.motionEnabled() ? 1 : 0) + (Prefs.soundSelected() ? 1 : 0)
+                + (Prefs.getBool(Prefs.KEY_SCHEDULE, false) ? 1 : 0)
+                + (Prefs.recordLightEnabled() ? 1 : 0);
+    }
+
+    private String freeLabel() {
+        try {
+            StatFs fs = new StatFs(Environment.getDataDirectory().getAbsolutePath());
+            return String.format(Locale.US, "%.1f GB", fs.getAvailableBytes() / (1024d * 1024d * 1024d));
+        } catch (Throwable failure) {
+            return "—";
+        }
+    }
+
+    private String usedLabel() {
+        try {
+            StatFs fs = new StatFs(Environment.getDataDirectory().getAbsolutePath());
+            long total = fs.getTotalBytes();
+            long free = fs.getAvailableBytes();
+            return String.format(Locale.US, "%.1f GB", (total - free) / (1024d * 1024d * 1024d));
+        } catch (Throwable failure) {
+            return "—";
+        }
+    }
+
+    private void applyColors() {}
+
+    private LinearLayout card() {
         LinearLayout card = column();
-        card.setBackgroundResource(R.drawable.bg_card);
-        card.setPadding(dp(16), dp(14), dp(16), dp(12));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(12);
-        host.addView(card, params);
-        LinearLayout head = new LinearLayout(this);
-        head.setOrientation(LinearLayout.HORIZONTAL);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView icon = new TextView(this);
-        icon.setText(mark);
-        icon.setGravity(Gravity.CENTER);
-        icon.setTextSize(14);
-        icon.setTextColor(color(markColor));
-        icon.setBackgroundResource(R.drawable.bg_icon_well);
-        icon.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        head.addView(icon, new LinearLayout.LayoutParams(dp(36), dp(36)));
-        LinearLayout titles = column();
-        titles.setPadding(dp(10), 0, 0, 0);
-        TextView heading = new TextView(this);
-        heading.setText(title);
-        heading.setTextSize(16);
-        heading.setTextColor(color(R.color.on_surface));
-        heading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        TextView detail = new TextView(this);
-        detail.setText(summary);
-        detail.setTextSize(12);
-        detail.setTextColor(color(R.color.on_surface_variant));
-        titles.addView(heading);
-        titles.addView(detail);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1);
-        head.addView(titles, titleParams);
-        card.addView(head);
-        sink = column();
-        card.addView(sink);
+        GradientDrawable shape = round(color(R.color.surface), 20);
+        shape.setStroke(dp(1), color(R.color.outline));
+        card.setBackground(shape);
+        return card;
     }
-    private TextView note(String text) {
-        TextView view = label(text, 12);
-        view.setTextColor(color(R.color.on_surface_variant));
+
+    private TextView section(String label) {
+        TextView view = text(label, 20, color(R.color.on_surface), true);
+        view.setPadding(dp(4), dp(20), dp(4), dp(8));
         return view;
     }
-    private TextView label(String text, int size) {
+
+    private TextView caption(String value) {
+        TextView view = text(value, 13, color(R.color.on_surface_variant), false);
+        return view;
+    }
+
+    private TextView text(String value, int sp, int color, boolean medium) {
         TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(size);
-        view.setTextColor(color(R.color.on_surface));
-        view.setPadding(0, dp(8), 0, dp(2));
-        sink.addView(view);
+        view.setText(value);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        view.setTextColor(color);
+        view.setTypeface(medium ? Typeface.create("sans-serif-medium", Typeface.NORMAL) : Typeface.DEFAULT);
         return view;
     }
+
     private LinearLayout column() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         return layout;
     }
+
+    private LinearLayout row() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.HORIZONTAL);
+        return layout;
+    }
+
+    private View gap(View child, int left, int top, int right, int bottom) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(left), dp(top), dp(right), dp(bottom));
+        child.setLayoutParams(lp);
+        return child;
+    }
+
+    private LinearLayout.LayoutParams weight() {
+        return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+    }
+
+    private GradientDrawable round(int fill, int radiusDp) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(dp(radiusDp));
+        shape.setColor(fill);
+        return shape;
+    }
+
     private int color(int id) { return getResources().getColor(id); }
-    private static String text(Spinner spinner) {
-        Object item = spinner.getSelectedItem();
-        return item == null ? "" : item.toString();
-    }
-    private static int clampMinute(int minute, int fallback) {
-        return minute >= 0 && minute <= 1439 ? minute : fallback;
-    }
-    private static String clock(int minute) {
-        return String.format(Locale.ROOT, "%02d:%02d", minute / 60, minute % 60);
-    }
-    private static String amount(long bytes) {
-        if (bytes >= 1024L * 1024L * 1024L)
-            return String.format(Locale.ROOT, "%.1f GiB", bytes / (1024d * 1024d * 1024d));
-        return String.format(Locale.ROOT, "%.0f MiB", bytes / (1024d * 1024d));
-    }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }

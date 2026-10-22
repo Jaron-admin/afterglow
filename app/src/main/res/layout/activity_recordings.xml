@@ -15,14 +15,16 @@
         android:paddingBottom="8dp">
 
         <TextView
+            android:id="@+id/recordingTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/recordings_title"
             android:textColor="@color/on_surface"
-            android:textSize="22sp"
-            android:fontFamily="sans-serif-medium" />
+            android:textSize="28sp"
+            android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/recordingNotice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -30,10 +32,19 @@
             android:textColor="@color/on_surface_variant"
             android:textSize="13sp" />
 
+        <HorizontalScrollView
+            android:id="@+id/recordingFilters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:scrollbars="none" />
+
         <FrameLayout
+            android:id="@+id/recordingStorageBox"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:layout_marginTop="12dp"
+            android:visibility="gone"
             android:background="@drawable/bg_field">
 
             <TextView

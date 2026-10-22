@@ -24,6 +24,7 @@ public final class RecordingReasonLabels {
         if (has(source, "motion")) labels.add(new Label("motion", "画面变动"));
         if (has(source, "sound")) labels.add(new Label("sound", "声音触发"));
         if (has(source, "schedule")) labels.add(new Label("schedule", "定时录制"));
+        if (has(source, "light")) labels.add(new Label("light", "光感触发"));
         return Collections.unmodifiableList(labels);
     }
 

@@ -58,7 +58,9 @@ public final class RecordingsActivity extends Activity {
     private final Set<String> thumbFailed = new HashSet<String>();
     private List<RecordingStore.Target> targets = new ArrayList<RecordingStore.Target>();
     private Spinner storage;
-    private TextView summary, emptyTitle, emptyBody, selectionCount;
+    private TextView summary, emptyTitle, emptyBody, selectionCount, titleView, notice;
+    private View filters;
+    private String reasonFilter = "all";
     private View empty, selectionBar;
     private ListView list;
     private RowAdapter adapter;
@@ -78,8 +80,31 @@ public final class RecordingsActivity extends Activity {
         }
         setContentView(R.layout.activity_recordings);
         storage = (Spinner) findViewById(R.id.recordingStorage);
+        titleView = (TextView) findViewById(R.id.recordingTitle);
+        notice = (TextView) findViewById(R.id.recordingNotice);
+        filters = findViewById(R.id.recordingFilters);
+        buildFilters();
         summary = (TextView) findViewById(R.id.recordingSummary);
         empty = findViewById(R.id.recordingEmpty);
+        if (empty instanceof LinearLayout) {
+            TextView go = new TextView(this);
+            go.setText("去开始录制");
+            go.setTextColor(getResources().getColor(R.color.on_primary));
+            go.setBackgroundResource(R.drawable.bg_btn_primary);
+            go.setGravity(android.view.Gravity.CENTER);
+            go.setPadding(dp(16), dp(10), dp(16), dp(10));
+            LinearLayout.LayoutParams goLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48));
+            goLp.topMargin = dp(16);
+            go.setLayoutParams(goLp);
+            go.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View view) {
+                    StreamControls.setRecording(RecordingsActivity.this, true);
+                    startActivity(new Intent(RecordingsActivity.this, RecordingSettingsActivity.class));
+                }
+            });
+            ((LinearLayout) empty).addView(go);
+        }
         emptyTitle = (TextView) findViewById(R.id.recordingEmptyTitle);
         emptyBody = (TextView) findViewById(R.id.recordingEmptyBody);
         list = (ListView) findViewById(R.id.recordingList);
@@ -210,17 +235,23 @@ public final class RecordingsActivity extends Activity {
             total += clip.bytes;
         }
         rows.clear();
+        List<RecordingDayGroups.Item> visible = new ArrayList<RecordingDayGroups.Item>();
+        for (RecordingDayGroups.Item item : items) {
+            RecordingStore.Clip clip = byId.get(item.id);
+            if (clip != null && accepts(clip)) visible.add(item);
+        }
         for (RecordingDayGroups.Section section : RecordingDayGroups.group(
-                items, System.currentTimeMillis(), TimeZone.getDefault())) {
+                visible, System.currentTimeMillis(), TimeZone.getDefault())) {
             rows.add(new Row(section.title));
             for (RecordingDayGroups.Item item : section.items) rows.add(new Row(byId.get(item.id)));
         }
         selected.retainAll(byId.keySet());
         if (selected.isEmpty()) selecting = false;
         adapter.notifyDataSetChanged();
-        summary.setText(clips.isEmpty()
-                ? "还没有完整结束的片段"
-                : clips.size() + " 段 · " + size(total));
+        summary.setText("");
+        if (notice != null) notice.setText(clips.isEmpty()
+                ? "暂无录像"
+                : "共 " + clips.size() + " 段 · " + size(total) + " · 长按可多选");
         showEmpty(false);
         showSelection();
     }
@@ -248,8 +279,67 @@ public final class RecordingsActivity extends Activity {
 
     private void showSelection() {
         selectionBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
-        selectionCount.setText("已选 " + selected.size());
+        selectionCount.setText("已选择 " + selected.size() + " 项");
+        if (titleView != null) titleView.setText(selecting ? "已选择 " + selected.size() + " 项" : "录像列表");
+        if (filters != null) filters.setVisibility(selecting ? View.GONE : View.VISIBLE);
         adapter.notifyDataSetChanged();
+    }
+
+    private boolean accepts(RecordingStore.Clip clip) {
+        if ("all".equals(reasonFilter)) return true;
+        String triggers = clip.triggers == null ? "" : clip.triggers;
+        if ("motion".equals(reasonFilter)) return hasCode(triggers, "motion") || (clip.reasons != null && clip.reasons.contains("画面"));
+        if ("sound".equals(reasonFilter)) return hasCode(triggers, "sound") || (clip.reasons != null && clip.reasons.contains("声"));
+        if ("timer".equals(reasonFilter)) return hasCode(triggers, "schedule") || (clip.reasons != null && clip.reasons.contains("定时"));
+        if ("light".equals(reasonFilter)) return hasCode(triggers, "light") || (clip.reasons != null && clip.reasons.contains("光感"));
+        return true;
+    }
+
+    private static boolean hasCode(String triggers, String code) {
+        int from = 0;
+        while (from < triggers.length()) {
+            int comma = triggers.indexOf(',', from);
+            if (comma < 0) comma = triggers.length();
+            if (code.equals(triggers.substring(from, comma).trim())) return true;
+            from = comma + 1;
+        }
+        return false;
+    }
+
+    private void buildFilters() {
+        if (!(filters instanceof android.widget.HorizontalScrollView)) return;
+        android.widget.HorizontalScrollView scroll = (android.widget.HorizontalScrollView) filters;
+        scroll.removeAllViews();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(4), 0, dp(4));
+        addFilter(row, "all", "全部");
+        addFilter(row, "motion", "画面");
+        addFilter(row, "sound", "声音");
+        addFilter(row, "timer", "定时");
+        addFilter(row, "light", "光感");
+        scroll.addView(row);
+    }
+
+    private void addFilter(LinearLayout row, final String code, String label) {
+        TextView chip = new TextView(this);
+        boolean on = code.equals(reasonFilter);
+        chip.setText(label);
+        chip.setTextSize(14);
+        chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        chip.setTextColor(getResources().getColor(on ? R.color.on_surface : R.color.on_surface_variant));
+        chip.setBackgroundResource(on ? R.drawable.bg_card : R.drawable.bg_field);
+        chip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                reasonFilter = code;
+                buildFilters();
+                rebuild();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = dp(8);
+        row.addView(chip, lp);
     }
 
     private List<RecordingStore.Clip> chosen() {
@@ -641,6 +731,7 @@ public final class RecordingsActivity extends Activity {
                 thumb.setImageDrawable(null);
                 requestThumb(clip);
             }
+            lock.setVisibility(View.GONE);
             lock.setText(clip.locked ? "解锁" : "锁定");
             lock.setContentDescription(clip.locked ? "解除锁定" : "锁定这段录像，避免被自动清理");
             lock.setOnClickListener(new View.OnClickListener() {
@@ -675,6 +766,9 @@ public final class RecordingsActivity extends Activity {
             } else if ("schedule".equals(label.code)) {
                 background = R.drawable.bg_tag_schedule;
                 color = R.color.tag_schedule_fg;
+            } else if ("light".equals(label.code)) {
+                background = R.drawable.bg_tag_light;
+                color = R.color.tag_light_fg;
             }
             chip.setBackgroundResource(background);
             chip.setTextColor(getResources().getColor(color));

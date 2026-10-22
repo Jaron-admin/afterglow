@@ -49,6 +49,16 @@ public final class Prefs {
     private static final String KEY_RECORD_HEIGHT = "record_height";
     private static final String KEY_OUTPUT_LAYOUT = "output_layout";
     private static final String KEY_DIRECTION_LOCK = "direction_lock";
+    public static final String KEY_MATCH_ALL = "recording_match_all";
+    public static final String KEY_LIGHT_THRESHOLD = "light.threshold";
+    public static final String KEY_LIGHT_METHOD = "light.method";
+    public static final String KEY_RECORD_LIGHT = "record.light.enabled";
+    public static final String KEY_STREAM_LIGHT = "stream.light.enabled";
+    public static final String KEY_SENSITIVITY_PERCENT = "detection_sensitivity_percent";
+    public static final String KEY_WATERMARK = "time_watermark";
+    public static final String KEY_HA = "ha.enabled";
+    public static final String KEY_HA_AUDIO = "ha.audio";
+    public static final String KEY_HA_NOTIFY = "ha.notify";
     private static final String KEY_LOCK_DEVICE = "locked_device_angle";
     private static final String KEY_LOCK_DISPLAY = "locked_display_rotation";
 
@@ -98,8 +108,8 @@ public final class Prefs {
             "1920 × 1080",
     };
 
-    public static final int[] FPS_OPTIONS = {5, 10, 15, 20, 25, 30};
-    public static final String[] FPS_LABELS = {"5 fps", "10 fps", "15 fps", "20 fps", "25 fps", "30 fps"};
+    public static final int[] FPS_OPTIONS = {5, 10, 15, 20, 25, 30, 24};
+    public static final String[] FPS_LABELS = {"5 fps", "10 fps", "15 fps", "20 fps", "25 fps", "30 fps", "24 fps"};
 
     public static final int[] BITRATE_OPTIONS = {500_000, 1_000_000, 1_500_000, 2_500_000, 4_000_000};
     public static final String[] BITRATE_LABELS = {"500 kbps", "1 Mbps", "1.5 Mbps", "2.5 Mbps", "4 Mbps"};
@@ -310,9 +320,34 @@ public final class Prefs {
     }
     public static boolean microphoneEnabled() { return getBool(KEY_MICROPHONE, false); }
     public static boolean motionEnabled() { return getBool(KEY_MOTION, true); }
+    public static boolean soundSelected() { return getBool(KEY_SOUND, true); }
     public static boolean soundEnabled() {
-        return microphoneEnabled() && getBool(KEY_SOUND, false);
+        return microphoneEnabled() && soundSelected();
     }
+    public static boolean matchAll() { return getBool(KEY_MATCH_ALL, false); }
+    public static int lightThreshold() {
+        return LightPolicy.clampPercent(getInt(KEY_LIGHT_THRESHOLD, 30));
+    }
+    public static String lightMethod() { return LightPolicy.method(getStr(KEY_LIGHT_METHOD, LightPolicy.FRAME)); }
+    public static boolean recordLightEnabled() { return getBool(KEY_RECORD_LIGHT, false); }
+    public static boolean streamLightEnabled() { return getBool(KEY_STREAM_LIGHT, false); }
+    public static int sensitivityPercent() {
+        if (p() != null && p().contains(KEY_SENSITIVITY_PERCENT)) {
+            return LightPolicy.clampPercent(getInt(KEY_SENSITIVITY_PERCENT, 60));
+        }
+        int level = sensitivity();
+        return level <= 0 ? 20 : level >= 2 ? 80 : 60;
+    }
+    public static void setSensitivityPercent(int percent) {
+        int clamped = LightPolicy.clampPercent(percent);
+        int level = clamped >= 70 ? 2 : clamped >= 40 ? 1 : 0;
+        if (p() != null) p().edit().putInt(KEY_SENSITIVITY_PERCENT, clamped)
+                .putInt(KEY_SENSITIVITY, level).apply();
+    }
+    public static boolean watermarkEnabled() { return getBool(KEY_WATERMARK, true); }
+    public static boolean haEnabled() { return getBool(KEY_HA, true); }
+    public static boolean haAudioEnabled() { return getBool(KEY_HA_AUDIO, true); }
+    public static boolean haNotifyEnabled() { return getBool(KEY_HA_NOTIFY, true); }
     public static int sensitivity() {
         return DetectionLevels.clamp(getInt(KEY_SENSITIVITY, 1));
     }

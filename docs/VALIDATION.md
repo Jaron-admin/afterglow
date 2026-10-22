@@ -1,3 +1,9 @@
+# Validation — v2.2 stream-first home
+
+Checked on 2026-10-22. `TriggerPolicyTest`, `LightPolicyTest`, `StreamPresetsTest` and `TimelineSustainTest` pass with the existing recording suite. Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors.
+
+Roborazzi renders every handoff state at 360dp, light and dark: `home-idle`, `home-streaming`, `home-recording`, `home-stream-rec`, `home-paused`, `home-res`, `settings`, `settings-light`, `settings-recording`, `settings-advanced`, `list`, `list-empty`, `list-select`, `stream`, `stream-push`. These are test renders, not device captures. The pages are the full scroll content, so tall screens are longer than the 800dp viewport.
+
 # Validation — shorter home screen and one sound switch
 
 Checked on 2026-10-21 with JDK 17. The JVM suites in `tests/run.ps1` passed, including `RecordingAudioTest` (one microphone switch, the silent-file upgrade, and the disabled sound trigger). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors and 129 warnings.

@@ -32,6 +32,37 @@ public final class HomeEntrySummaries {
         return width + "×" + height + " · " + mode;
     }
 
+    public static String triggerCard(boolean matchAll, int kinds) {
+        if (kinds <= 0) return "请选择触发";
+        return (matchAll ? "全部满足" : "任一满足") + " ·\n" + kinds + " 种触发";
+    }
+
+    public static String libraryCard(int todayCount, int totalCount) {
+        return "今天 " + Math.max(0, todayCount) + " 段\n共 " + Math.max(0, totalCount) + " 段";
+    }
+
+    public static String streamCard(boolean running, boolean paused, boolean haConnected) {
+        String line = paused ? "推流已暂停" : running ? "推流中" : "推流已关";
+        return line + "\n" + (haConnected ? "HA 已连接" : "HA 未接入");
+    }
+
+    public static int countToday(List<Clip> clips, long nowMs, TimeZone zone) {
+        if (zone == null) throw new IllegalArgumentException("zone");
+        Calendar now = Calendar.getInstance(zone);
+        now.setTimeInMillis(nowMs);
+        Calendar stamp = Calendar.getInstance(zone);
+        int count = 0;
+        if (clips != null) {
+            for (Clip clip : clips) {
+                if (clip == null) continue;
+                stamp.setTimeInMillis(clip.startMs);
+                if (now.get(Calendar.YEAR) == stamp.get(Calendar.YEAR)
+                        && now.get(Calendar.DAY_OF_YEAR) == stamp.get(Calendar.DAY_OF_YEAR)) count++;
+            }
+        }
+        return count;
+    }
+
     public static String today(List<Clip> clips, long nowMs, TimeZone zone) {
         if (zone == null) throw new IllegalArgumentException("zone");
         Calendar now = Calendar.getInstance(zone);

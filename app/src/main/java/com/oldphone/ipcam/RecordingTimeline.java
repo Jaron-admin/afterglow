@@ -36,7 +36,7 @@ final class RecordingTimeline {
     private long ringBytes, latestUs = -1, segmentStartUs, eventUntilUs = -1, eventFirstUs = -1, segmentBytes;
     private long writtenVideoUs = -1;
     private long writtenMediaUs = -1;
-    private boolean ready, active, closed, armed = true, stopAfterSegment;
+    private boolean ready, active, closed, armed = true, sustain, stopAfterSegment;
     private long resumeAfterUs = -1;
     private final List<Marker> pendingMarks = new ArrayList<Marker>();
     private static final class Marker {
@@ -67,6 +67,16 @@ final class RecordingTimeline {
         } else {
             eventUntilUs = eventFirstUs = -1;
             pendingMarks.clear();
+        }
+    }
+    void setSustain(boolean value) throws IOException {
+        if (closed || sustain == value) return;
+        sustain = value;
+        if (value) {
+            stopAfterSegment = false;
+            maybeStart();
+        } else if (active && (eventUntilUs < 0 || latestUs > eventUntilUs)) {
+            stopAfterSegment = true;
         }
     }
     void setReady() throws IOException {
@@ -115,7 +125,7 @@ final class RecordingTimeline {
             publishMarksThrough(sample.ptsUs);
             return;
         }
-        if (eventMode && sample.ptsUs > eventUntilUs) {
+        if (eventMode && !sustain && sample.ptsUs > eventUntilUs) {
             // Audio may be ahead of video. Wait for video to end the segment,
             // but never write audio past the event's post-roll deadline.
             if (sample.video) { finish(); eventUntilUs = eventFirstUs = -1; }
@@ -140,8 +150,8 @@ final class RecordingTimeline {
         if (sample.video) publishMarksThrough(sample.ptsUs);
     }
     private void maybeStart() throws IOException {
-        if (!ready || active || closed || !armed || (eventMode && eventUntilUs < 0)) return;
-        if (eventMode && latestUs > eventUntilUs) {
+        if (!ready || active || closed || !armed || (eventMode && !sustain && eventUntilUs < 0)) return;
+        if (eventMode && !sustain && latestUs > eventUntilUs) {
             pendingMarks.clear(); eventUntilUs = -1; return;
         }
         long keyUs = Long.MAX_VALUE;
