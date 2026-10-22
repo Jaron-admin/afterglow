@@ -7,6 +7,19 @@
     <string name="status_running">运行中</string>
     <string name="btn_start">开始</string>
     <string name="btn_stop">停止</string>
+    <string name="record_sound">录制声音</string>
+    <string name="record_sound_description">录制声音。打开后，直播和录像可以使用麦克风。</string>
+    <string name="recordings_title">录像列表</string>
+    <string name="recordings_notice">点一条，用其他应用打开。长按可以多选，再导出、分享或删除。</string>
+    <string name="recordings_empty_mark">录</string>
+    <string name="recordings_empty_title">还没有录像</string>
+    <string name="recordings_empty_body">开始录制后，画面变动、声音或定时触发的片段都会按日期出现在这里</string>
+    <string name="recordings_no_storage_title">没有可用的存储</string>
+    <string name="recordings_no_storage_body">检查手机存储后再试。卸载应用会删除还没导出的录像。</string>
+    <string name="recording_export">导出</string>
+    <string name="recording_share">分享</string>
+    <string name="recording_delete">删除</string>
+    <string name="recording_cancel">取消</string>
 
     <string name="preview_title">实时预览</string>
     <string name="preview_idle">余光，等待开启</string>
@@ -48,6 +61,17 @@
     <string name="camera_back_legacy">后置（自动选择）</string>
     <string name="camera_unavailable">%1$s（暂不可用）</string>
     <string name="lock_orientation">锁定当前方向</string>
+    <string name="lock_orientation_hint">锁定后，界面和摄像头校正不再跟着手机转。</string>
+    <string name="stream_back">返回</string>
+    <string name="stream_page_title">画面与推流</string>
+    <string name="stream_page_intro">画质、输出、地址和保活。改完自动应用。</string>
+    <string name="entry_recording">录制设置</string>
+    <string name="entry_library">录像列表</string>
+    <string name="entry_stream">画面与推流</string>
+    <string name="section_quality_hint">分辨率、帧率、码率和推流方式。</string>
+    <string name="section_devices_summary">同网段的其他推流手机。</string>
+    <string name="section_run_title">运行</string>
+    <string name="section_run_hint">开机、访问验证和锁屏保活。</string>
     <string name="calibrate_camera">校准摄像头</string>
     <string name="calibration_reset">恢复自动</string>
     <string name="orientation_apply_failed">方向设置未应用：%1$s</string>
@@ -102,7 +126,7 @@
     <string name="ha_advanced_title">进阶</string>
     <string name="ha_advanced_steps">需要在 HA 浏览手机录像时，可通过 HACS 安装 Afterglow。尚未安装 HACS，请先按“在线教程”中的官方指南安装与配置。\n\n在 HACS 右上角菜单打开“自定义仓库”，填入下面的网址，类别选 Integration（集成）：\nhttps://github.com/Jaron-admin/afterglow\n\n添加后打开 Afterglow，点击 Download（下载）。完整重启 HA，再到“设置 → 设备与服务 → 添加集成 → Afterglow”，选择发现的设备或填写手机 HTTP 地址：\n%1$s\n\n开启访问验证时，填写手机上相同的用户名和密码。原来的 Generic Camera 不会自动转换。\n\n在“媒体 → Afterglow → 设备”中播放已完成的录像并拖动进度。只显示当前所选存储中的片段；浏览时保持手机在网络模式下采集。\n\n专用集成可在收到局域网发现信息时跟随手机 IP 变化。外出时继续通过现有 Tailscale 打开家里的 HA，由 HA 连接余光手机。</string>
     <string name="help_title">帮助</string>
-    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录像与检测”可设置连续或事件录像、手机或 SD 存储、分段和容量。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像，重要片段请从录像列表导出。\n\n麦克风默认关闭，启用后 RTSP 可带声音；录像声音和声响检测可分别设置。MJPEG 始终无声。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
+    <string name="help_body">将手机与 Home Assistant 连接到同一局域网。开启摄像头后，点按访问地址即可复制；RTSP 可供 VLC 等播放器使用，MJPEG 可用浏览器查看。\n\n接入 Home Assistant 时，点击“接入 Home Assistant”查看四步教程，用 Generic Camera（通用摄像头）观看实时画面。录像浏览等可选功能放在教程的“进阶”中。\n\n“录制设置”可设置连续或事件录像、触发和灵敏度。分段、画质、存储和每天一段时间在“高级”里。选择“仅本地录像”可离线保存，不启动网络观看服务。卸载会删除应用目录中的录像。录像列表按日期排列，点一条用其他应用打开；长按后可以导出、分享或删除。导出到 Movies/Afterglow，相册和电脑都能看到。\n\n主界面预览旁边的“录制声音”默认关闭。这一个开关同时决定直播音轨、声音触发，以及录像文件里带不带声音。关闭时，录制设置里的声音触发不可用。MJPEG 始终无声。画质、输出、地址和保活在“画面与推流”里。画面变动和声响检测均在本机运行，不识别人或宠物。\n\n界面跟随手机四向旋转，最终输出尺寸保持固定。预览保留当前方向的完整取景，半透明遮罩标出被推流裁掉的范围。锁定当前方向会同时锁定界面和摄像头校正姿态。\n\n镜头与输出尺寸修改后自动应用，切换时画面会短暂断开。镜头列表只显示系统开放的摄像头；输出尺寸允许裁剪缩放，编码器配置失败时会显示原因。自动校正异常时可打开“校准摄像头”按镜头调整偏移，或恢复自动。\n\n附近设备支持查看同网段的推流手机，可点刷新重新查找。HTTP 访问验证在输入完成或离开输入框后生效，保护观看与录像；公共设备身份信息用于发现。\n\n长时间使用请留意电池温度与状态，并在系统电池设置中允许后台运行。</string>
     <string name="auth_username_required">用户名不能为空</string>
     <string name="keep_alive">保活设置 · 避免锁屏断流</string>
     <string name="keep_alive_title">锁屏保活</string>

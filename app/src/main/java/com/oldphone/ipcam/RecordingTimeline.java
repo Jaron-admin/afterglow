@@ -36,7 +36,8 @@ final class RecordingTimeline {
     private long ringBytes, latestUs = -1, segmentStartUs, eventUntilUs = -1, eventFirstUs = -1, segmentBytes;
     private long writtenVideoUs = -1;
     private long writtenMediaUs = -1;
-    private boolean ready, active, closed;
+    private boolean ready, active, closed, armed = true, sustain, stopAfterSegment;
+    private long resumeAfterUs = -1;
     private final List<Marker> pendingMarks = new ArrayList<Marker>();
     private static final class Marker {
         final String reason; final long ptsUs;
@@ -52,12 +53,38 @@ final class RecordingTimeline {
         this.maxSegmentBytes = maxSegmentBytes;
     }
     long bufferedBytes() { return ringBytes; }
+    boolean isActive() { return active; }
+    boolean isArmed() { return armed; }
+    void setArmed(boolean value) throws IOException {
+        if (closed || armed == value) return;
+        armed = value;
+        if (value) {
+            stopAfterSegment = false;
+            resumeAfterUs = latestUs;
+            maybeStart();
+        } else if (active) {
+            stopAfterSegment = true;
+        } else {
+            eventUntilUs = eventFirstUs = -1;
+            pendingMarks.clear();
+        }
+    }
+    void setSustain(boolean value) throws IOException {
+        if (closed || sustain == value) return;
+        sustain = value;
+        if (value) {
+            stopAfterSegment = false;
+            maybeStart();
+        } else if (active && (eventUntilUs < 0 || latestUs > eventUntilUs)) {
+            stopAfterSegment = true;
+        }
+    }
     void setReady() throws IOException {
         ready = true;
         maybeStart();
     }
     void trigger(String reason, long ptsUs) throws IOException {
-        if (closed) return;
+        if (closed || (!armed && !active)) return;
         if (eventMode) {
             if (eventUntilUs < 0 || ptsUs > eventUntilUs) eventFirstUs = ptsUs;
             eventUntilUs = Math.max(eventUntilUs, ptsUs + postUs);
@@ -76,7 +103,29 @@ final class RecordingTimeline {
     }
     private void acceptActive(Sample sample) throws IOException {
         if (sample.ptsUs < segmentStartUs) return;
-        if (eventMode && sample.ptsUs > eventUntilUs) {
+        if (sample.key() && stopAfterSegment) {
+            // The arriving keyframe closes the open segment and is not written.
+            // Recording stays stopped until the window opens again.
+            publishMarks(sample.ptsUs, false);
+            finish(false);
+            stopAfterSegment = false;
+            if (eventMode) {
+                eventUntilUs = eventFirstUs = -1;
+                pendingMarks.clear();
+            }
+            return;
+        }
+        if (stopAfterSegment && eventMode && sample.ptsUs > eventUntilUs) {
+            if (!sample.video) return;
+            if (sample.ptsUs - segmentStartUs > segmentUs + 15_000_000L) {
+                finish();
+                throw new IOException("编码器长时间未提供关键帧，录像已暂停");
+            }
+            writeSample(sample);
+            publishMarksThrough(sample.ptsUs);
+            return;
+        }
+        if (eventMode && !sustain && sample.ptsUs > eventUntilUs) {
             // Audio may be ahead of video. Wait for video to end the segment,
             // but never write audio past the event's post-roll deadline.
             if (sample.video) { finish(); eventUntilUs = eventFirstUs = -1; }
@@ -101,12 +150,12 @@ final class RecordingTimeline {
         if (sample.video) publishMarksThrough(sample.ptsUs);
     }
     private void maybeStart() throws IOException {
-        if (!ready || active || closed || (eventMode && eventUntilUs < 0)) return;
-        if (eventMode && latestUs > eventUntilUs) {
+        if (!ready || active || closed || !armed || (eventMode && !sustain && eventUntilUs < 0)) return;
+        if (eventMode && !sustain && latestUs > eventUntilUs) {
             pendingMarks.clear(); eventUntilUs = -1; return;
         }
         long keyUs = Long.MAX_VALUE;
-        for (Sample s : ring) if (s.key()
+        for (Sample s : ring) if (s.key() && s.ptsUs > resumeAfterUs
                 && (!eventMode || preUs > 0 || s.ptsUs >= eventFirstUs)) keyUs = Math.min(keyUs, s.ptsUs);
         if (keyUs == Long.MAX_VALUE) return;
         begin(keyUs);

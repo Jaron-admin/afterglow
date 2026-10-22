@@ -20,9 +20,10 @@ final class RecordingHttpRepository implements RecordingHttpApi.Repository {
         List<RecordingHttpApi.Clip> result = new ArrayList<RecordingHttpApi.Clip>();
         for (RecordingStore.Clip clip : store().list()) {
             result.add(new RecordingHttpApi.Clip(clip.id, clip.startTimeMs, clip.durationMs,
-                    clip.bytes, clip.locked, clip.withAudio, clip.reasons));
+                    clip.bytes, clip.locked, clip.withAudio, clip.reasons, clip.hasThumbnail, clip.triggers));
         }
         return result;
     }
     @Override public File file(String id) throws IOException { return store().registeredFile(id); }
+    @Override public File thumbnail(String id) throws IOException { return store().thumbnail(id); }
 }

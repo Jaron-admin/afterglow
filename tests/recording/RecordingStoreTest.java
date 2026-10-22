@@ -120,6 +120,15 @@ public final class RecordingStoreTest {
             throw new AssertionError("read-only writer did not report an error");
         } catch (IOException expected) { }
         check(readOnlyClip.file.exists(), "read-only failures do not remove recordings");
+        File thumbRoot = Files.createTempDirectory(new File("build").toPath(), "afterglow-thumb-cache").toFile();
+        RecordingStore thumbs = new RecordingStore(thumbRoot, 1000, 0);
+        RecordingStore.Clip bare = complete(thumbs, 9, 8);
+        check(!bare.hasThumbnail, "a new clip has no thumbnail until one is stored");
+        thumbs.attachThumbnail(bare.id, new byte[] {1, 2, 3, 4});
+        check(!thumbs.list().get(0).hasThumbnail, "a non-jpeg is ignored");
+        thumbs.attachThumbnail(bare.id, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9});
+        RecordingStore.Clip cached = thumbs.list().get(0);
+        check(cached.hasThumbnail && thumbs.thumbnail(cached.id).isFile(), "finished clip keeps a cached thumbnail");
         System.out.println("RecordingStoreTest PASS: quota, lock, partial/foreign protection, canonical source paths, unavailable target");
     }
 }

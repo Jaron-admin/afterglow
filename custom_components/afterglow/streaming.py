@@ -10,7 +10,8 @@ RESPONSE_HEADERS = ("Content-Length", "Content-Range", "Accept-Ranges", "ETag", 
 
 
 async def proxy_stream(request: web.Request, api: AfterglowApi,
-                       path: str, content_type: str) -> web.StreamResponse:
+                       path: str, content_type: str,
+                       cache_control: str = "private, no-store") -> web.StreamResponse:
     """Relay bytes without buffering an entire clip or forwarding HA credentials."""
     headers = {key: request.headers[key] for key in ("Range", "If-Range") if key in request.headers}
     response = None
@@ -22,7 +23,7 @@ async def proxy_stream(request: web.Request, api: AfterglowApi,
             if upstream.headers.get("Content-Encoding", "identity") != "identity":
                 raise web.HTTPBadGateway(text="Unexpected compressed media")
             outgoing = {key: upstream.headers[key] for key in RESPONSE_HEADERS if key in upstream.headers}
-            outgoing["Cache-Control"] = "private, no-store"
+            outgoing["Cache-Control"] = cache_control
             if upstream.status in (200, 206):
                 actual = upstream.headers.get("Content-Type", "").lower()
                 if not actual.startswith(content_type):

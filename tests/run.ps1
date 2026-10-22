@@ -34,4 +34,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Detection/audio tests failed.' }
     & "$PSScriptRoot\recording\run.ps1" -JavaHome $JavaHome -AndroidJar $AndroidJar
     if ($LASTEXITCODE -ne 0) { throw 'Recording tests failed.' }
+    & "$PSScriptRoot\render\run.ps1" -JavaHome $JavaHome
+    if ($LASTEXITCODE -ne 0) { throw 'Render budget tests failed.' }
 } finally { Pop-Location }

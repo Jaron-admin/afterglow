@@ -17,6 +17,12 @@ import java.util.Set;
  * not a guarantee that another device can reach an address.
  */
 public final class NetUtils {
+    /** How long a snapshot is trusted before the next read re-enumerates. */
+    private static final long ADDRESS_TTL_NANOS = 4000L * 1000000L;
+
+    private static volatile List<Address> cachedAddresses;
+    private static volatile long cachedAtNanos;
+
     public static final int WIFI = 0;
     public static final int ETHERNET = 1;
     public static final int HOTSPOT = 2;
@@ -72,6 +78,34 @@ public final class NetUtils {
 
     /** Empty means no usable interface; callers must not invent a remote URL. */
     public static List<Address> localAddresses() {
+        List<Address> snapshot = cachedAddresses;
+        if (snapshot != null && System.nanoTime() - cachedAtNanos < ADDRESS_TTL_NANOS) {
+            return snapshot;
+        }
+        return refreshAddresses();
+    }
+
+    /**
+     * Re-enumerates and replaces the snapshot. Enumeration walks netlink and can take tens
+     * of milliseconds on an old phone, so the result is memoised: the screens read this
+     * once a second and must never block the frame on it.
+     */
+    public static synchronized List<Address> refreshAddresses() {
+        List<Address> fresh = enumerate();
+        cachedAddresses = fresh;
+        cachedAtNanos = System.nanoTime();
+        return fresh;
+    }
+
+    /** Warms the snapshot off the UI thread so the first paint never waits on netlink. */
+    public static void warmAddresses() {
+        if (cachedAddresses != null) return;
+        new Thread(new Runnable() {
+            @Override public void run() { refreshAddresses(); }
+        }, "afterglow-net-warm").start();
+    }
+
+    private static List<Address> enumerate() {
         List<CapturedInterface> captured = new ArrayList<CapturedInterface>();
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();

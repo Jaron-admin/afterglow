@@ -9,9 +9,9 @@ try {
     $java = Join-Path $JavaHome 'bin\java.exe'
     New-Item -ItemType Directory -Force build\recording-tests | Out-Null
     $sourceRoot = 'app\src\main\java'
-    & $javac -encoding UTF-8 -source 1.8 -target 1.8 -cp $AndroidJar -sourcepath $sourceRoot -d build\recording-tests tests\recording\RecordingTimelineTest.java tests\recording\RecordingStoreTest.java tests\recording\RecordingWorkQueueTest.java
+    & $javac -encoding UTF-8 -source 1.8 -target 1.8 -cp $AndroidJar -sourcepath $sourceRoot -d build\recording-tests tests\recording\RecordingTimelineTest.java tests\recording\RecordingStoreTest.java tests\recording\RecordingWorkQueueTest.java tests\recording\RecordingPolicyTest.java tests\recording\RecordingPlaybackTest.java tests\recording\RecordingLibraryTest.java tests\recording\RecordingAudioTest.java tests\recording\TriggerPolicyTest.java tests\recording\LightPolicyTest.java tests\recording\StreamPresetsTest.java tests\recording\TimelineSustainTest.java
     if ($LASTEXITCODE -ne 0) { throw 'Recording test compilation failed.' }
-    foreach ($test in @('RecordingTimelineTest', 'RecordingStoreTest', 'RecordingWorkQueueTest')) {
+    foreach ($test in @('RecordingTimelineTest', 'RecordingStoreTest', 'RecordingWorkQueueTest', 'RecordingPolicyTest', 'RecordingPlaybackTest', 'RecordingLibraryTest', 'RecordingAudioTest', 'TriggerPolicyTest', 'LightPolicyTest', 'StreamPresetsTest', 'TimelineSustainTest')) {
         & $java -cp "build\recording-tests;$AndroidJar" "com.oldphone.ipcam.$test"
         if ($LASTEXITCODE -ne 0) { throw "Recording test failed: $test" }
     }

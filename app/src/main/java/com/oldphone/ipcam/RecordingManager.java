@@ -23,7 +23,8 @@ public final class RecordingManager implements AutoCloseable {
     private final Listener listener;
     private final RecordingWorkQueue queue = new RecordingWorkQueue(QUEUE_BYTES, 512);
     private final Thread worker;
-    private volatile boolean closing, failed;
+    private volatile boolean closing, failed, armed = true, scheduledWindow;
+    private volatile byte[] latestStill;
     private volatile String lastStatus = "正在准备录像";
     private RecordingStore store;
     private RecordingTimeline timeline;
@@ -31,6 +32,7 @@ public final class RecordingManager implements AutoCloseable {
     private MediaMuxer muxer;
     private RecordingStore.Pending pending;
     private int videoTrack, audioTrack, videoSamples, audioSamples;
+    private boolean segmentScheduled;
     private long segmentStartUs, lastVideoUs, lastAudioUs, lastRelativeUs, segmentBytes;
     private long checkedBytes, checkedPtsUs, firstSampleUs = -1;
     private final long clockOffsetMs = System.currentTimeMillis() - System.nanoTime() / 1_000_000L;
@@ -63,6 +65,32 @@ public final class RecordingManager implements AutoCloseable {
     }
     public boolean hasFailed() { return failed; }
     public String status() { return lastStatus; }
+    /** Daily window, not all-day. Snapshotted when a segment starts. Does not change saved settings. */
+    public void setScheduledWindow(boolean value) { scheduledWindow = value; }
+    /** Latest camera JPEG. Copied so the capture buffer can be reused. */
+    public void noteStill(byte[] jpeg) {
+        if (jpeg == null || jpeg.length < 4 || jpeg.length > 512 * 1024) return;
+        if ((jpeg[0] & 255) != 0xFF || (jpeg[1] & 255) != 0xD8) return;
+        latestStill = java.util.Arrays.copyOf(jpeg, jpeg.length);
+    }
+    public void setSustain(final boolean value) {
+        if (closing || failed) return;
+        offer(new RecordingWorkQueue.Work() {
+            public void run() throws IOException {
+                if (timeline != null) timeline.setSustain(value);
+            }
+        }, 0);
+    }
+    public void setArmed(final boolean value) {
+        if (armed == value || closing || failed) return;
+        armed = value;
+        offer(new RecordingWorkQueue.Work() {
+            public void run() throws IOException {
+                if (timeline != null) timeline.setArmed(value);
+                refreshScheduleStatus();
+            }
+        }, 0);
+    }
     public void trigger(final String reason, final long ptsUs) {
         if (reason == null) return;
         offer(new RecordingWorkQueue.Work() {
@@ -82,6 +110,7 @@ public final class RecordingManager implements AutoCloseable {
                         && (videoFormat == null || (options.withAudio && audioFormat == null)))
                     throw new IOException("等待编码音视频格式超时，录像已暂停");
                 timeline.accept(new RecordingTimeline.Sample(video, owned, ptsUs, flags));
+                refreshScheduleStatus();
             }
         }, owned.length);
     }
@@ -141,6 +170,7 @@ public final class RecordingManager implements AutoCloseable {
             audioTrack = options.withAudio ? muxer.addTrack(audioFormat) : -1;
             muxer.start();
         } catch (RuntimeException e) { throw new IOException("无法建立 MP4 音视频轨道", e); }
+        segmentScheduled = scheduledWindow;
         segmentStartUs = ptsUs;
         lastVideoUs = lastAudioUs = -1;
         lastRelativeUs = segmentBytes = checkedBytes = 0;
@@ -181,6 +211,12 @@ public final class RecordingManager implements AutoCloseable {
         } catch (RuntimeException e) { throw new IOException("MP4 未能完整结束，此段未保存", e); }
         finally { try { finished.release(); } catch (RuntimeException ignored) { } }
         if (failed) throw new IOException("录像已暂停");
+        try { Mp4FastStart.relocate(pending.file); }
+        catch (IOException ignored) { /* Keep the clip even if moov stays at the end. */ }
+        byte[] still = latestStill;
+        if (still != null) try { store.writeThumbnail(pending, still); }
+        catch (IOException ignored) { /* Playback does not depend on the thumbnail. */ }
+        pending.properties.setProperty("triggers", RecordingReasons.codes(markers.toString(), segmentScheduled));
         store.complete(pending, Math.max(1, lastRelativeUs / 1000L), markers.toString());
         pending = null;
         if (options.mode == MODE_EVENT) status("事件录像待命");
@@ -192,6 +228,12 @@ public final class RecordingManager implements AutoCloseable {
         if (store != null && pending != null) store.discard(pending);
         pending = null;
     }
+    private void refreshScheduleStatus() {
+        if (failed || timeline == null || timeline.isActive()) return;
+        status(timeline.isArmed()
+                ? (options.mode == MODE_EVENT ? "事件录像待命" : "等待视频关键帧")
+                : "未到录像时间");
+    }
     private synchronized void fail(String message) {
         if (failed) return;
         failed = true;
@@ -200,7 +242,8 @@ public final class RecordingManager implements AutoCloseable {
         if (listener != null) try { listener.onStatus(message, true); } catch (RuntimeException ignored) { }
     }
     private synchronized void status(String message) {
-        if (!failed) lastStatus = message;
+        if (failed || message.equals(lastStatus)) return;
+        lastStatus = message;
         if (!failed && listener != null)
             try { listener.onStatus(message, false); } catch (RuntimeException ignored) { }
     }

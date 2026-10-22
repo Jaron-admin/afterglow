@@ -14,6 +14,10 @@ import android.net.wifi.WifiManager;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -66,6 +70,12 @@ public final class CameraStreamService extends Service {
     public static volatile CameraCatalog.Entry activeCamera;
     public static volatile String recordingStatus = "录像已关闭";
     public static volatile boolean recordingFailed;
+    public static volatile boolean recordingNow;
+    public static volatile long recordingSinceMs;
+    public static volatile long streamSinceMs;
+    public static volatile boolean lightPaused;
+    public static volatile int frameBrightness = -1;
+    public static volatile int sensorBrightness = -1;
     public static volatile String lastEvent = "";
 
     // A replacement service joins the same worker until its predecessor has released
@@ -97,6 +107,7 @@ public final class CameraStreamService extends Service {
     private AudioCapture audioCapture;
     private MotionDetector motionDetector;
     private int detectionSensitivity;
+    private RecordingSchedule recordingSchedule = RecordingSchedule.allDay();
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
 
@@ -117,6 +128,20 @@ public final class CameraStreamService extends Service {
     private long fpsWindowStart;
     private int fpsWindowCount;
     private final ByteArrayOutputStream jpegBuffer = new ByteArrayOutputStream(256 * 1024);
+    private long lastStillNs;
+    private boolean cameraAsleep;
+    private boolean sustainMarked;
+    private SensorManager sensorManager;
+    private final SensorEventListener lightListener = new SensorEventListener() {
+        @Override public void onSensorChanged(SensorEvent event) {
+            if (event == null || event.values == null || event.values.length == 0) return;
+            sensorBrightness = LightPolicy.luxToPercent(event.values[0]);
+            if (cameraHandler != null) cameraHandler.post(new Runnable() {
+                @Override public void run() { syncLightPause(); }
+            });
+        }
+        @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    };
 
     /** One immutable settings snapshot; only replaced on the main thread. */
     private static final class OrientationSettings {
@@ -135,6 +160,11 @@ public final class CameraStreamService extends Service {
         super.onCreate();
         Prefs.init(this);
         discovery = new ServiceDiscovery(this);
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            Sensor light = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+            if (light != null) sensorManager.registerListener(lightListener, light, SensorManager.SENSOR_DELAY_NORMAL);
+        }
         mainHandler = new Handler(getMainLooper());
         stateOwner = this;
         frameGeometry = null;
@@ -173,6 +203,15 @@ public final class CameraStreamService extends Service {
                 streamGeneration = generation;
                 running = requested;
                 reconfiguring = configuring;
+                if (requested) {
+                    if (streamSinceMs == 0) streamSinceMs = System.currentTimeMillis();
+                } else {
+                    streamSinceMs = 0;
+                    lightPaused = false;
+                    recordingNow = false;
+                    recordingSinceMs = 0;
+                    frameBrightness = -1;
+                }
                 if (configuring || !requested) {
                     streaming = false;
                     frameGeometry = null;
@@ -239,6 +278,7 @@ public final class CameraStreamService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        if (sensorManager != null) sensorManager.unregisterListener(lightListener);
         stopOrientationMonitoring();
         lifecycle.shutdown();
         cameraHandler.post(new Runnable() {
@@ -299,10 +339,10 @@ public final class CameraStreamService extends Service {
         // Recording can use a larger size than the MJPEG/stream output. Capture at
         // the larger of the two and render two crops from the same NV21 frame.
         boolean needsRecordSize = Prefs.recordingMode() != 0 || Prefs.needRtsp();
-        recordWidth = needsRecordSize && Prefs.hasRecordSize()
-                ? Prefs.recordWidth() : outputWidth;
-        recordHeight = needsRecordSize && Prefs.hasRecordSize()
-                ? Prefs.recordHeight() : outputHeight;
+        int[] recorded = StreamPresets.recordPixels(!Prefs.hasRecordSize(),
+                Prefs.recordWidth(), Prefs.recordHeight(), outputWidth, outputHeight);
+        recordWidth = needsRecordSize ? recorded[0] : outputWidth;
+        recordHeight = needsRecordSize ? recorded[1] : outputHeight;
         int captureWidth = Math.max(outputWidth, recordWidth);
         int captureHeight = Math.max(outputHeight, recordHeight);
         fps = Prefs.fps();
@@ -352,9 +392,11 @@ public final class CameraStreamService extends Service {
 
     private void startServers(final long generation) throws Exception {
         final boolean microphone = Prefs.microphoneEnabled();
+        final boolean rtspAudio = microphone && Prefs.haAudioEnabled();
         final boolean detectSound = Prefs.soundEnabled();
         detectionSensitivity = Prefs.sensitivity();
-        final int sensitivity = detectionSensitivity;
+        final int soundSensitivity = Prefs.soundSensitivity();
+        recordingSchedule = Prefs.recordingSchedule();
         final SoundDetector soundDetector = detectSound ? new SoundDetector() : null;
         motionDetector = Prefs.motionEnabled() ? new MotionDetector() : null;
         recordingFailed = false;
@@ -368,16 +410,21 @@ public final class CameraStreamService extends Service {
                         if (isSessionCurrent(generation)) {
                             recordingStatus = status;
                             recordingFailed = failed;
+                            noteRecording(status);
                         }
                     }
                 }
             });
+            recorder.setScheduledWindow(recordingSchedule.limited());
+            if (Prefs.recordingMode() == RecordingManager.MODE_CONTINUOUS) {
+                recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
+            }
         }
         final RecordingManager sessionRecorder = recorder;
         if (Prefs.needRtsp()) {
             rtspServer = new RtspServer(RTSP_PORT);
             rtspServer.setVideoInfo(recordWidth, recordHeight, bitrate);
-            if (microphone) rtspServer.setAudioConfig(AudioCapture.SAMPLE_RATE,
+            if (rtspAudio) rtspServer.setAudioConfig(AudioCapture.SAMPLE_RATE,
                     AudioCapture.CHANNELS, AudioCapture.audioSpecificConfig());
         }
         final RtspServer sessionRtsp = rtspServer;
@@ -430,14 +477,16 @@ public final class CameraStreamService extends Service {
                     if (sessionRecorder != null) sessionRecorder.setAudioFormat(format);
                 }
                 @Override public void onEncodedFrame(byte[] data, long ptsUs) {
-                    if (sessionRtsp != null && isSessionCurrent(generation))
+                    if (sessionRtsp != null && rtspAudio && isSessionCurrent(generation))
                         sessionRtsp.pushAudio(data, ptsUs);
                     if (sessionRecorder != null) sessionRecorder.onAudio(data, ptsUs, 0);
                 }
                 @Override public void onPcm(short[] pcm, int count, long ptsUs) {
+                    if (sessionRtsp != null && rtspAudio && isSessionCurrent(generation))
+                        sessionRtsp.pushPcm(pcm, count, ptsUs);
                     if (isSessionCurrent(generation) && soundDetector != null
-                            && soundDetector.update(pcm, count, ptsUs, sensitivity))
-                        detected(sessionRecorder, "声响", ptsUs, generation);
+                            && soundDetector.update(pcm, count, ptsUs, soundSensitivity))
+                        onTriggers(false, true, ptsUs, generation);
                 }
                 @Override public void onError(String message) {
                     failCurrentSession(generation, "麦克风采集失败：" + message
@@ -448,6 +497,81 @@ public final class CameraStreamService extends Service {
         if (rtspServer == null && mjpegServer == null && sessionRecorder == null) {
             throw new IOException("没有可用的视频服务");
         }
+    }
+
+    private int activeBrightness() {
+        return LightPolicy.SENSOR.equals(Prefs.lightMethod()) ? sensorBrightness : frameBrightness;
+    }
+
+    /** @return true when this frame must not be published */
+    private boolean syncLightPause() {
+        int brightness = activeBrightness();
+        boolean pause = LightPolicy.pauseStream(Prefs.lightMethod(), Prefs.streamLightEnabled(),
+                brightness, Prefs.lightThreshold());
+        lightPaused = pause;
+        if (LightPolicy.cameraMaySleep(Prefs.lightMethod(), Prefs.streamLightEnabled(),
+                brightness, Prefs.lightThreshold())) {
+            if (!cameraAsleep && capture != null) {
+                CameraCapture old = capture;
+                capture = null;
+                streaming = false;
+                cameraAsleep = true;
+                try { old.close(); } catch (Throwable failure) { Log.w(TAG, "light sleep", failure); }
+            }
+            return true;
+        }
+        if (cameraAsleep) {
+            cameraAsleep = false;
+            lightPaused = false;
+            final StreamLifecycle current = lifecycle;
+            mainHandler.post(new Runnable() {
+                @Override public void run() { if (current != null) current.reconfigure(); }
+            });
+            return true;
+        }
+        return pause;
+    }
+
+    private void noteRecording(String status) {
+        boolean open = "正在保存事件录像".equals(status) || "正在连续录像".equals(status);
+        recordingNow = open;
+        if (open) {
+            if (recordingSinceMs == 0) recordingSinceMs = System.currentTimeMillis();
+        } else {
+            recordingSinceMs = 0;
+        }
+    }
+
+    private void onTriggers(boolean motionEdge, boolean soundEdge, long ptsUs, long generation) {
+        if (!isSessionCurrent(generation) || recorder == null) return;
+        if (Prefs.recordingMode() == RecordingManager.MODE_CONTINUOUS) {
+            recorder.setArmed(recordingSchedule.allowsNow(System.currentTimeMillis()));
+            recorder.setScheduledWindow(recordingSchedule.limited());
+            return;
+        }
+        int brightness = activeBrightness();
+        boolean blocked = LightPolicy.pauseRecording(Prefs.recordLightEnabled(), brightness,
+                Prefs.lightThreshold());
+        TriggerPolicy.Selection selection = new TriggerPolicy.Selection(
+                Prefs.motionEnabled(), Prefs.soundSelected(),
+                Prefs.getBool(Prefs.KEY_SCHEDULE, false),
+                Prefs.recordLightEnabled(), Prefs.matchAll());
+        TriggerPolicy.Moment moment = new TriggerPolicy.Moment(motionEdge, soundEdge,
+                Prefs.recordingSchedule().allowsNow(System.currentTimeMillis()),
+                LightPolicy.satisfied(brightness, Prefs.lightThreshold()));
+        TriggerPolicy.Decision decision = blocked ? TriggerPolicy.none()
+                : TriggerPolicy.decide(selection, moment);
+        recorder.setScheduledWindow(recordingSchedule.limited());
+        recorder.setArmed(!blocked && (decision.sustain || selection.hasInstant()));
+        recorder.setSustain(!blocked && decision.sustain);
+        if (decision.motion) detected(recorder, "画面变动", ptsUs, generation);
+        if (decision.sound) detected(recorder, "声响", ptsUs, generation);
+        if (decision.sustain && !sustainMarked) {
+            sustainMarked = true;
+            if (decision.schedule) detected(recorder, "定时", ptsUs, generation);
+            if (decision.light) detected(recorder, "光感触发", ptsUs, generation);
+        }
+        if (!decision.sustain) sustainMarked = false;
     }
 
     private void detected(RecordingManager target, String reason, long ptsUs, long generation) {
@@ -508,6 +632,9 @@ public final class CameraStreamService extends Service {
         try {
             final FrameGeometry framePlan = geometryForFrame(rawWidth, rawHeight, generation);
             Nv21Transform.render(nv21, framePlan, outputBuffer);
+            frameBrightness = LightPolicy.framePercent(outputBuffer, outputWidth, outputHeight);
+            if (syncLightPause()) return;
+            onTriggers(false, false, now / 1000L, generation);
             if (encoder != null) {
                 byte[] encodeBuffer = outputBuffer;
                 if (recordBuffer != null) {
@@ -519,13 +646,21 @@ public final class CameraStreamService extends Service {
             }
             if (motionDetector != null && motionDetector.update(outputBuffer, outputWidth,
                     outputHeight, now / 1000L, framePlan.revision, detectionSensitivity))
-                detected(recorder, "画面变动", now / 1000L, generation);
+                onTriggers(true, false, now / 1000L, generation);
 
             // Remote MJPEG/snapshot always receive the cropped fixed-size output.
+            byte[] jpeg = null;
             if (mjpegServer != null && mjpegServer.isMjpegEnabled()) {
                 if (outputJpegPacer.shouldPublish(now, mjpegServer.hasStreamClients())) {
-                    byte[] jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
+                    jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
                     if (jpeg != null && isSessionCurrent(generation)) mjpegServer.pushJpeg(jpeg);
+                }
+            }
+            if (recorder != null && isSessionCurrent(generation) && now - lastStillNs >= 5_000_000_000L) {
+                if (jpeg == null) jpeg = compressToJpeg(outputBuffer, outputWidth, outputHeight);
+                if (jpeg != null) {
+                    recorder.noteStill(jpeg);
+                    lastStillNs = now;
                 }
             }
 
@@ -624,6 +759,10 @@ public final class CameraStreamService extends Service {
             frameGeometry = null;
             activeCamera = null;
             if (!recordingFailed) recordingStatus = "录像已停止";
+            recordingNow = false;
+            recordingSinceMs = 0;
+            cameraAsleep = false;
+            sustainMarked = false;
         }
         Log.i(TAG, "stopped");
     }

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="84dp"
+        android:orientation="horizontal"
+        android:paddingLeft="12dp"
+        android:paddingTop="10dp"
+        android:paddingRight="8dp"
+        android:paddingBottom="10dp">
+
+        <FrameLayout
+            android:layout_width="104dp"
+            android:layout_height="64dp">
+
+            <ImageView
+                android:id="@+id/recordingThumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="录像缩略图"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:id="@+id/recordingDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|right"
+                android:layout_marginRight="4dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/bg_duration"
+                android:paddingLeft="5dp"
+                android:paddingTop="1dp"
+                android:paddingRight="5dp"
+                android:paddingBottom="1dp"
+                android:textColor="#FFFFFFFF"
+                android:textSize="11sp" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginLeft="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/recordingTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/on_surface"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/recordingMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="2dp"
+                android:textColor="@color/on_surface_variant"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/recordingTags"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="4dp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/recordingOpen"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:contentDescription="用其他应用打开"
+            android:padding="8dp" />
+
+        <TextView
+            android:id="@+id/recordingLock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="已锁定"
+            android:textColor="@color/ink_orange"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <CheckBox
+            android:id="@+id/recordingMark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:clickable="false"
+            android:focusable="false"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <View
+        android:id="@+id/recordingDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginLeft="128dp"
+        android:layout_marginRight="12dp"
+        android:background="@color/outline" />
+</LinearLayout>

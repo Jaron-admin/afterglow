@@ -82,7 +82,10 @@ public final class FFmpegInteropTest {
                     if (sendVideo) {
                         Video frame = videos.get((int)(v++ % videos.size()));
                         server.pushFrame(frame.bytes, videoPts, frame.key);
-                    } else server.pushAudio(audios.get((int)(a++ % audios.size())), audioPts);
+                    } else {
+                        server.pushAudio(audios.get((int)(a++ % audios.size())), audioPts);
+                        server.pushPcm(new short[320], 320, audioPts);
+                    }
                 }
             } catch (InterruptedException expected) {
                 if (publish.get()) failure.set(expected);

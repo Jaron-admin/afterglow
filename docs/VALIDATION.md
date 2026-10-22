@@ -1,4 +1,66 @@
-# Validation — Afterglow 1.4.2
+# Validation — v2.2 stream-first home
+
+Checked on 2026-10-22. `TriggerPolicyTest`, `LightPolicyTest`, `StreamPresetsTest` and `TimelineSustainTest` pass with the existing recording suite. Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors.
+
+Roborazzi renders every handoff state at 360dp, light and dark: `home-idle`, `home-streaming`, `home-recording`, `home-stream-rec`, `home-paused`, `home-res`, `settings`, `settings-light`, `settings-recording`, `settings-advanced`, `list`, `list-empty`, `list-select`, `stream`, `stream-push`. These are test renders, not device captures. The pages are the full scroll content, so tall screens are longer than the 800dp viewport.
+
+# Validation — shorter home screen and one sound switch
+
+Checked on 2026-10-21 with JDK 17. The JVM suites in `tests/run.ps1` passed, including `RecordingAudioTest` (one microphone switch, the silent-file upgrade, and the disabled sound trigger). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors and 129 warnings.
+
+Home now shows the preview, 「录制声音」, status, the camera, and three entry cards. Quality, output, addresses and keep-alive are on 「画面与推流」. 「锁定当前方向」 is a switch and still uses `direction_lock`. The file-audio checkbox is gone. `recording_audio` is still read and is rewritten only when the user moves 「录制声音」, so an older silent recording stays silent until that gesture.
+
+The new screenshots are the same Robolectric 4.17 native + Roborazzi path: main, 画面与推流, and recording settings, light and dark.
+
+# Validation — recording list, settings and color
+
+Checked on 2026-10-21 with JDK 17. The same JVM suites as `tests/run.ps1` passed, including `RecordingLibraryTest` (reason chips, day folders, export file names). Home Assistant `unittest` stayed at 29. `lintDebug` completed with 0 errors.
+
+The interface follows the system light and dark theme. Warm orange `#C2410C` is the filled button color with white text. Small orange text uses `#9A3412` on the light background and `#FDBA74` on the dark background. Cyan is the second accent. Reason chips are orange, cyan and indigo so the three reasons stay distinct.
+
+No phone was used. API 33 and API 30 x86_64 emulators were installed. `emulator -accel-check` reported KVM usable, and the API 30 image was cold-booted with `-no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data` and `hw.bluetooth=no`. Neither guest printed a kernel log or became an adb device. The screenshots on the pull request are from `RecordingUiShots` (Robolectric 4.17 native graphics + Roborazzi), not from a device framebuffer.
+
+# Validation — HA audio and recording playback
+
+Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12. No phone or Home Assistant frontend was available, so the numbers below are from the unit fixtures, not a live player.
+
+Commands (Linux equivalents of `tests/run.ps1`, which itself calls `javac.exe`):
+
+- JDK 17 `javac`/`java` for the suites in `tests/run.ps1`: network (68), frame pacing, discovery, output, geometry, local preview, lifecycle, detection, audio capture, camera, codec API 19 and 21, viewer (including the node browser test), RTSP audio, and recording. All passed.
+- `python3 -m unittest discover -s homeassistant/tests -v`: 29 tests, OK. The previous 27 still pass; two new cases cover an old phone without the day index, and the authenticated thumbnail proxy.
+- `./gradlew --no-daemon assembleDebug lintDebug`: BUILD SUCCESSFUL, lint report 104 warnings and 0 errors.
+
+First-load measurements from `RecordingPlaybackTest` (printed as `MEASURE` lines):
+
+- MP4 header. Method: build a synthetic file `ftyp + 256 KiB mdat + moov`, then count the bytes that must be read before `moov` is complete. Before faststart: 262236 (the whole file). After `Mp4FastStart`: 84 (`ftyp` + `moov`). The media bytes and the `stco` chunk offset were checked after the move. A second pass leaves the file alone.
+- Recording list. Method: 200 clips across 10 days, compare HTTP body sizes. `GET /api/recordings?offset=0&limit=100` (what the media browser used to request first): 27451 bytes. `GET /api/recordings/days` (the first screen now): 330 bytes.
+
+Device and Home Assistant checks still open:
+
+1. Mic on, confirm the phone or VLC still has sound, then open the HA camera player (not the MJPEG card) and confirm HA has sound too. The picture card / MJPEG path is still silent.
+2. Record a new clip. In HA → Media → Afterglow it should sit under today's date, with a thumbnail, time, duration and a reason (画面变动, 声音触发, or 定时 when a daily window is on). Dragging the progress bar still works.
+3. An older clip without a thumbnail still plays. The camera entity id is unchanged.
+4. 仅本地录像 still has no recording HTTP API.
+
+# Validation — recording settings and external playback
+
+Checked on 2026-10-21 with JDK 21 (RTSP audio rechecked on JDK 17), Android SDK Platform/Build-Tools 36 and Python 3.12.
+
+- The same JVM suites listed in `tests/run.ps1` were run on Linux. `tests/run.ps1` itself calls `javac.exe` and is the Windows CI entry; it was not executed on this machine.
+- New checks cover the daily window (including overnight and equal start/end), preset versus 自定义 values, sound-sensitivity fallback, content URI segment encoding, and timeline behavior: idle outside the window, finish the open segment on the next keyframe, and start again only after the window opens.
+- `python -m unittest discover -s homeassistant/tests -v`: all 27 tests passed. Home Assistant media browsing was not modified.
+- Gradle `assembleDebug lintDebug`: successful, 0 errors and 104 warnings.
+- No phone, player app, or Home Assistant frontend was exercised. The manual checks below are still open.
+
+Device checks for this change:
+
+1. Upgrade over an existing install. Custom segment length, quota, pre/post-roll and retention that are not on a preset must still show as 自定义 and keep the old number. Sound sensitivity must match the previous single sensitivity until it is changed.
+2. All-day continuous recording behaves as before. With a daily window, live view and RTSP/MJPEG keep running outside the window. The active clip ends on the next keyframe (about one second at the current encoder interval) and no new clip opens until the window starts again.
+3. Event mode does not start a clip outside the window. A clip already running ends at the next keyframe instead of using the full post-roll.
+4. The recordings list has no in-app player. 用其他应用打开 plays in another app. 分享 sends the file. 导出, 锁定 and 删除 still work. With no video app installed, the chooser or the export prompt appears, and Android 7+ does not crash on a file URI.
+5. Home Assistant → Media → Afterglow still lists and seeks completed clips while the phone is streaming. 仅本地录像 still has no recording HTTP API.
+
+# Previous validation — Afterglow 1.4.2
 
 Checked on 2026-10-21 with JDK 17, Android SDK Platform/Build-Tools 36 and Python 3.12.
 

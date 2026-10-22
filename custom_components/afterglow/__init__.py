@@ -11,7 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import AfterglowApi, ApiError, AuthError
 from .const import DOMAIN, DEFAULT_PORT
-from .views import RecordingProxyView
+from .views import RecordingProxyView, RecordingThumbnailView
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.CAMERA]
@@ -46,6 +46,7 @@ async def async_setup_entry(hass, entry):
     shared = hass.data.setdefault(DOMAIN, {})
     if not shared.get("proxy_registered"):
         hass.http.register_view(RecordingProxyView(hass))
+        hass.http.register_view(RecordingThumbnailView(hass))
         shared["proxy_registered"] = True
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

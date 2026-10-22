@@ -13,6 +13,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -34,7 +35,9 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
+import android.widget.CompoundButton;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -43,11 +46,13 @@ import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity {
 
     private static final int REQ_PERM = 100;
+    private static final int REQ_MIC = 101;
 
     /** 外部拉起推流用的 intent extra */
     public static final String EXTRA_AUTOSTART = "autostart";
@@ -62,6 +67,12 @@ public final class MainActivity extends Activity {
      *   adb shell am start -n com.oldphone.ipcam/.MainActivity --ez uishot true
      */
     public static final String EXTRA_UI_SHOT = "uishot";
+    /** Open the picture and stream page instead of the home screen. */
+    public static final String EXTRA_STREAM_PAGE = "stream_page";
+    public static final String EXTRA_PAGE_SHOT = "page_shot";
+    int v22Today;
+    int v22Total;
+    private V22Ui v22;
     /** 直接打开指定 IP 的查看页（可用来给某一路流建桌面快捷方式） */
     public static final String EXTRA_OPEN_IP = "open_ip";
     /** 配合 open_ip：把对方当作「仅 RTSP」设备处理 */
@@ -79,8 +90,17 @@ public final class MainActivity extends Activity {
     private NetUtils.Address displayedAddress;
     private String selectedAddressKey;
     private Button btnToggle;
+    private Switch swRecordSound;
+    private boolean suppressMic, pendingMic;
     private TextView tvRecordingStatus;
     private TextView tvLastEvent;
+    private TextView tvSettingsSummary;
+    private TextView tvLibrarySummary;
+    private TextView tvStreamSummary;
+    private boolean streamPage;
+    private int summaryGeneration;
+    private long summaryAt;
+    private boolean summaryReady;
     private boolean startAfterPermission;
 
     private View rowRtsp;
@@ -108,7 +128,7 @@ public final class MainActivity extends Activity {
     private Spinner spMode;
     private Spinner spCamera;
     private Spinner spOutputLayout;
-    private CheckBox cbOrientationLock;
+    private Switch swOrientationLock;
     private View llResolution;
     private View llAspectRatio;
     private View llCustomSize;
@@ -261,8 +281,11 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Prefs.init(this);
+        NetUtils.warmAddresses();
         applyRequestedOrientation();
+        ShotChrome.beforeContent(this);
         setContentView(R.layout.activity_main);
+        ShotChrome.afterContent(this);
         bindViews();
         setupSpinners();
         setupListeners();
@@ -273,7 +296,33 @@ public final class MainActivity extends Activity {
         decodeThread.start();
         decodeHandler = new Handler(decodeThread.getLooper());
 
+        if (savedInstanceState != null && savedInstanceState.getBoolean("streamPage", false)) {
+            showStreamPage(true);
+        }
         handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putBoolean("streamPage", streamPage);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (v22 != null && v22.showingAdvanced()) {
+            v22.showAdvanced(false);
+            return;
+        }
+        if (v22 != null && v22.showingStream()) {
+            showStreamPage(false);
+            return;
+        }
+        if (streamPage) {
+            showStreamPage(false);
+            return;
+        }
+        super.onBackPressed();
     }
 
     @Override
@@ -294,6 +343,10 @@ public final class MainActivity extends Activity {
             return;
         }
         // 截图标记要先读，后面 openViewer 会把它透传给查看页
+        if (intent.getBooleanExtra(EXTRA_STREAM_PAGE, false)) {
+            showStreamPage(true);
+            intent.removeExtra(EXTRA_STREAM_PAGE);
+        }
         if (intent.getBooleanExtra(EXTRA_UI_SHOT, false)) {
             shotRequested = true;
             intent.removeExtra(EXTRA_UI_SHOT);
@@ -422,10 +475,13 @@ public final class MainActivity extends Activity {
     private void bindViews() {
         tvStatus = (TextView) findViewById(R.id.tvStatus);
         tvDetail = (TextView) findViewById(R.id.tvDetail);
+        tvRecordingStatus = (TextView) findViewById(R.id.tvRecordingStatus);
+        tvLastEvent = (TextView) findViewById(R.id.tvLastEvent);
         tvRtsp = (TextView) findViewById(R.id.tvRtsp);
         tvMjpeg = (TextView) findViewById(R.id.tvMjpeg);
         tvSnapshot = (TextView) findViewById(R.id.tvSnapshot);
         btnToggle = (Button) findViewById(R.id.btnToggle);
+        swRecordSound = (Switch) findViewById(R.id.swRecordSound);
 
         rowRtsp = findViewById(R.id.rowRtsp);
         rowMjpeg = findViewById(R.id.rowMjpeg);
@@ -462,7 +518,7 @@ public final class MainActivity extends Activity {
         spMode = (Spinner) findViewById(R.id.spMode);
         spCamera = (Spinner) findViewById(R.id.spCamera);
         spOutputLayout = (Spinner) findViewById(R.id.spOutputLayout);
-        cbOrientationLock = (CheckBox) findViewById(R.id.cbOrientationLock);
+        swOrientationLock = (Switch) findViewById(R.id.cbOrientationLock);
         llResolution = findViewById(R.id.llResolution);
         llAspectRatio = findViewById(R.id.llAspectRatio);
         llCustomSize = findViewById(R.id.llCustomSize);
@@ -479,53 +535,121 @@ public final class MainActivity extends Activity {
         llDevices = (LinearLayout) findViewById(R.id.llDevices);
         btnRescan = (TextView) findViewById(R.id.btnRescan);
         addRecordingControls();
+        ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
+        if (content.getChildCount() > 0) content.getChildAt(0).setVisibility(View.GONE);
+        v22 = new V22Ui(this);
+        v22.attach(content);
+        adoptLegacyAdvanced();
+    }
+
+    /**
+     * The old layout stays inflated because its controls keep their listeners, but it is
+     * never shown. The panels the v2.2 screens never rebuilt are moved into the new
+     * 高级设置 page so RTSP credentials, keep-alive, calibration, aspect ratio, custom
+     * sizes and LAN discovery stay reachable instead of disappearing with the layout.
+     */
+    private void adoptLegacyAdvanced() {
+        if (v22 == null) return;
+        View panel = findViewById(R.id.settingsPanel);
+        if (panel != null) {
+            // The legacy back button belongs to the old page switcher.
+            View legacyBack = panel.findViewById(R.id.btnStreamBack);
+            if (legacyBack != null) legacyBack.setVisibility(View.GONE);
+            // The panel is `gone` in the old layout because the legacy page switcher
+            // toggled it; the advanced page owns it now.
+            panel.setVisibility(View.VISIBLE);
+            v22.hostAdvanced(panel);
+        }
+        View calibrate = findViewById(R.id.btnCalibrate);
+        if (calibrate != null) {
+            calibrate.setVisibility(View.VISIBLE);
+            v22.hostAdvanced(calibrate);
+        }
+        // Ratio and size are owned by the chip on the preview now; leaving the old spinners
+        // here was the duplication. The direction and the custom-size editors stay.
+        hide(R.id.llAspectRatio);
+        hide(R.id.llResolution);
+    }
+
+    private void hide(int id) {
+        View view = findViewById(id);
+        if (view != null) view.setVisibility(View.GONE);
+    }
+
+    /** Re-reads everything the moved legacy panel displays. */
+    void v22RefreshAdvanced() {
+        refreshAddresses();
+        updateGeometryLabel();
+        refreshHomeSummaries();
     }
 
     private void addRecordingControls() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(12), dp(8), dp(12), dp(10));
-        panel.setBackgroundResource(R.drawable.bg_card);
-        LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(
+        LinearLayout panel = (LinearLayout) findViewById(R.id.entryPanel);
+        tvSettingsSummary = entryCard(panel, getString(R.string.entry_recording), "录",
+                R.drawable.bg_entry_recording, R.color.accent_text, new View.OnClickListener() {
+                    @Override public void onClick(View view) {
+                        startActivity(new Intent(MainActivity.this, RecordingSettingsActivity.class));
+                    }
+                });
+        tvLibrarySummary = entryCard(panel, getString(R.string.entry_library), "像",
+                R.drawable.bg_entry_library, R.color.secondary, new View.OnClickListener() {
+                    @Override public void onClick(View view) {
+                        startActivity(new Intent(MainActivity.this, RecordingsActivity.class));
+                    }
+                });
+        tvLibrarySummary.setText(HomeEntrySummaries.today(null, System.currentTimeMillis(), TimeZone.getDefault()));
+        tvStreamSummary = entryCard(panel, getString(R.string.entry_stream), "流",
+                R.drawable.bg_entry_stream, R.color.primary, new View.OnClickListener() {
+                    @Override public void onClick(View view) { showStreamPage(true); }
+                });
+    }
+
+    private TextView entryCard(LinearLayout parent, String title, String mark, int background,
+                               int markColor, View.OnClickListener click) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackgroundResource(background);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(click);
+        TextView icon = new TextView(this);
+        icon.setText(mark);
+        icon.setGravity(Gravity.CENTER);
+        icon.setTextSize(14);
+        icon.setTextColor(getResources().getColor(markColor));
+        icon.setBackgroundResource(R.drawable.bg_icon_well);
+        icon.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        titles.setPadding(dp(10), 0, 0, 0);
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextSize(16);
+        heading.setTextColor(getResources().getColor(R.color.on_surface));
+        heading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        TextView summary = new TextView(this);
+        summary.setTextSize(13);
+        summary.setTextColor(getResources().getColor(R.color.on_surface_variant));
+        summary.setPadding(0, dp(2), 0, 0);
+        titles.addView(heading);
+        titles.addView(summary);
+        card.addView(titles, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        panelParams.topMargin = dp(12);
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button settings = new Button(this);
-        settings.setText("录像与检测");
-        settings.setTextSize(13);
-        settings.setAllCaps(false);
-        settings.setTextColor(getResources().getColor(R.color.primary));
-        settings.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                startActivity(new Intent(MainActivity.this, RecordingSettingsActivity.class));
-            }
-        });
-        Button recordings = new Button(this);
-        recordings.setText("录像列表");
-        recordings.setTextSize(13);
-        recordings.setAllCaps(false);
-        recordings.setTextColor(getResources().getColor(R.color.primary));
-        recordings.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                startActivity(new Intent(MainActivity.this, RecordingsActivity.class));
-            }
-        });
-        actions.addView(settings, new LinearLayout.LayoutParams(0, dp(48), 1));
-        actions.addView(recordings, new LinearLayout.LayoutParams(0, dp(48), 1));
-        panel.addView(actions);
-        tvRecordingStatus = new TextView(this);
-        tvRecordingStatus.setTextSize(12);
-        tvRecordingStatus.setTextColor(getResources().getColor(R.color.on_surface_variant));
-        tvRecordingStatus.setPadding(0, dp(4), 0, 0);
-        panel.addView(tvRecordingStatus);
-        tvLastEvent = new TextView(this);
-        tvLastEvent.setTextSize(12);
-        tvLastEvent.setTextColor(getResources().getColor(R.color.on_surface_variant));
-        tvLastEvent.setPadding(0, dp(4), 0, 0);
-        panel.addView(tvLastEvent);
-        LinearLayout parent = (LinearLayout) settingsPanel;
-        parent.addView(panel, parent.indexOfChild(tvDetail) + 1, panelParams);
+        params.topMargin = dp(10);
+        parent.addView(card, params);
+        return summary;
+    }
+
+    private void showStreamPage(boolean show) {
+        streamPage = show;
+        // The legacy panels live inside the hidden root and are never shown again; the
+        // settings panel has been adopted by the v2.2 高级设置 page.
+        if (v22 != null) v22.showStream(show);
     }
 
     private void setupSpinners() {
@@ -534,7 +658,7 @@ public final class MainActivity extends Activity {
         refreshCameraOptions();
         bindSpinner(spOutputLayout, getResources().getStringArray(R.array.output_layouts), Prefs.outputLayout());
         refreshResolutionOptions();
-        cbOrientationLock.setChecked(Prefs.orientationLocked());
+        swOrientationLock.setChecked(Prefs.orientationLocked());
         etOutputWidth.setText(String.valueOf(Prefs.outputWidth()));
         etOutputHeight.setText(String.valueOf(Prefs.outputHeight()));
         showOutputEditors();
@@ -684,8 +808,9 @@ public final class MainActivity extends Activity {
 
     private void showOutputEditors() {
         boolean custom = Prefs.outputLayout() == 2;
-        llAspectRatio.setVisibility(custom ? View.GONE : View.VISIBLE);
-        llResolution.setVisibility(custom ? View.GONE : View.VISIBLE);
+        // Ratio and resolution live in the preview menu; only the custom editors remain.
+        llAspectRatio.setVisibility(View.GONE);
+        llResolution.setVisibility(View.GONE);
         llCustomSize.setVisibility(custom ? View.VISIBLE : View.GONE);
     }
 
@@ -775,23 +900,20 @@ public final class MainActivity extends Activity {
 
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
+        if (v22 != null) v22.applyOrientation();
         arrangePanes();
     }
 
     private void arrangePanes() {
+        // The v2.2 screens own the layout once they are attached; this only keeps the
+        // hidden legacy tree consistent for the panels adopted into 高级设置.
+        if (v22 != null) return;
         boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        ViewGroup target = landscape ? svSettings : llContent;
-        if (settingsPanel.getParent() != target) {
-            ((ViewGroup) settingsPanel.getParent()).removeView(settingsPanel);
-            target.addView(settingsPanel);
-        }
         llBody.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         svMain.setLayoutParams(new LinearLayout.LayoutParams(
                 landscape ? 0 : ViewGroup.LayoutParams.MATCH_PARENT,
-                landscape ? ViewGroup.LayoutParams.MATCH_PARENT : 0, landscape ? 1.1f : 1f));
-        svSettings.setLayoutParams(new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        svSettings.setVisibility(landscape ? View.VISIBLE : View.GONE);
+                landscape ? ViewGroup.LayoutParams.MATCH_PARENT : 0, 1f));
+        svSettings.setVisibility(View.GONE);
         flPreview.post(new Runnable() {
             @Override public void run() { resizePreview(displayedGeometry); }
         });
@@ -873,6 +995,25 @@ public final class MainActivity extends Activity {
                 }
             }
         });
+        suppressMic = true;
+        swRecordSound.setChecked(Prefs.microphoneEnabled());
+        suppressMic = false;
+        swRecordSound.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(CompoundButton button, boolean checked) {
+                if (suppressMic) return;
+                if (checked && Build.VERSION.SDK_INT >= 23
+                        && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    suppressMic = true;
+                    button.setChecked(false);
+                    suppressMic = false;
+                    pendingMic = true;
+                    requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+                    return;
+                }
+                pendingMic = false;
+                applyMicrophone(checked);
+            }
+        });
 
         spCamera.setOnItemSelectedListener(new SimpleSelect() {
             @Override
@@ -945,7 +1086,7 @@ public final class MainActivity extends Activity {
                 scheduleStreamChanges();
             }
         });
-        cbOrientationLock.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+        swOrientationLock.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
             @Override public void onCheckedChanged(android.widget.CompoundButton button, boolean locked) {
                 if (suppressListener) return;
                 int displayRotation = getWindowManager().getDefaultDisplay().getRotation();
@@ -955,6 +1096,9 @@ public final class MainActivity extends Activity {
                 applyRequestedOrientation();
                 applyOrientationSettings();
             }
+        });
+        findViewById(R.id.btnStreamBack).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { showStreamPage(false); }
         });
         findViewById(R.id.btnCalibrate).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { showCalibrationDialog(); }
@@ -988,7 +1132,7 @@ public final class MainActivity extends Activity {
                     suppressListener = true;
                     spMode.setSelection(Prefs.mode(), false);
                     suppressListener = false;
-                    Toast.makeText(MainActivity.this, "请先在“录像与检测”启用录像", Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "请先在“录制设置”启用录像", Toast.LENGTH_LONG).show();
                     return;
                 }
                 updateStreamSetting(Prefs.KEY_MODE, Prefs.MODE_BOTH, position);
@@ -1219,7 +1363,7 @@ public final class MainActivity extends Activity {
         refreshCameraOptions();
         spOutputLayout.setSelection(Prefs.outputLayout(), false);
         refreshResolutionOptions();
-        cbOrientationLock.setChecked(Prefs.orientationLocked());
+        swOrientationLock.setChecked(Prefs.orientationLocked());
         spFps.setSelection(Prefs.getInt(Prefs.KEY_FPS, 2), false);
         spBitrate.setSelection(Prefs.getInt(Prefs.KEY_BITRATE, 2), false);
         spMode.setSelection(Prefs.mode(), false);
@@ -1323,9 +1467,91 @@ public final class MainActivity extends Activity {
                 }
             } else {
                 Toast.makeText(this, Prefs.microphoneEnabled()
-                        ? "未启动：需要摄像头和麦克风权限；也可在设置中关闭麦克风"
+                        ? "未启动：需要摄像头和麦克风权限；也可关闭「录制声音」"
                         : "未启动：需要摄像头权限", Toast.LENGTH_LONG).show();
             }
+        } else if (requestCode == REQ_MIC) {
+            pendingMic = false;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                suppressMic = true;
+                swRecordSound.setChecked(true);
+                suppressMic = false;
+                applyMicrophone(true);
+            } else {
+                Toast.makeText(this, "没有麦克风权限，录制声音保持关闭", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    void v22ToggleStream() {
+        if (StreamControls.streaming()) {
+            StreamControls.setStreaming(this, false);
+            refreshUi();
+            return;
+        }
+        Prefs.setInt(Prefs.KEY_MODE, Prefs.MODE_BOTH);
+        if (CameraStreamService.running) {
+            StreamControls.reconfigure(this);
+            refreshUi();
+            return;
+        }
+        beginStart();
+    }
+
+    void v22SetMic(boolean enabled) {
+        applyMicrophone(enabled);
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetLens(boolean front) {
+        String key = front ? "facing:front" : "facing:back";
+        if (!key.equals(Prefs.cameraKey())) {
+            Prefs.setCameraKey(key);
+            if (CameraStreamService.running) StreamControls.reconfigure(this);
+        }
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetResolution(int width, int height) {
+        boolean streaming = CameraStreamService.running;
+        boolean endsSegment = StreamPresets.followEndsSegment(!Prefs.hasRecordSize(),
+                Prefs.outputWidth(), Prefs.outputHeight(), width, height);
+        Prefs.setOutputSize(width, height);
+        if (streaming) {
+            if (endsSegment || Prefs.hasRecordSize()) StreamControls.reconfigure(this);
+            else StreamControls.reconfigure(this);
+        }
+        Toast.makeText(this, "推流分辨率已切换为 " + StreamPresets.label(width, height)
+                + (streaming ? "，正在重连" : ""), Toast.LENGTH_SHORT).show();
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22SetRotation(int degrees) {
+        Prefs.setManualRotationDegrees(degrees);
+        applyOrientationSettings();
+        if (v22 != null) v22.refresh();
+    }
+
+    void v22OpenSettings(boolean focusLight) {
+        Intent intent = new Intent(this, RecordingSettingsActivity.class);
+        if (focusLight) intent.putExtra(RecordingSettingsActivity.EXTRA_OPEN_LIGHT, true);
+        startActivity(intent);
+    }
+
+    void v22OpenLibrary() {
+        startActivity(new Intent(this, RecordingsActivity.class));
+    }
+
+    private void applyMicrophone(boolean enabled) {
+        boolean was = Prefs.microphoneEnabled();
+        Prefs.setBool(Prefs.KEY_MICROPHONE, enabled);
+        Prefs.setBool(Prefs.KEY_RECORD_AUDIO, RecordingAudio.recordAudioAfterUserToggle(enabled));
+        if (was == enabled || !CameraStreamService.running) return;
+        try {
+            startService(new Intent(this, CameraStreamService.class)
+                    .setAction(CameraStreamService.ACTION_RECONFIGURE));
+        } catch (Throwable failure) {
+            Toast.makeText(this, "录制声音未能立刻生效", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1381,8 +1607,33 @@ public final class MainActivity extends Activity {
 
     private void refreshUi() {
         boolean running = CameraStreamService.running;
-
         boolean switching = CameraStreamService.reconfiguring;
+
+        if (v22 == null) {
+            refreshLegacyChrome(running, switching);
+            refreshPreview(running);
+        } else {
+            v22.refresh();
+        }
+        refreshHomeSummaries();
+        CameraCatalog.Entry active = CameraStreamService.activeCamera;
+        if (active != lastActiveCamera) {
+            lastActiveCamera = active;
+            mergeActiveCamera();
+            normalizeLegacyCameraKey();
+            refreshCameraOptions();
+            refreshResolutionOptions();
+        }
+        updateGeometryLabel();
+        refreshAddresses();
+    }
+
+    /**
+     * The hidden legacy header and preview panel. Kept for the screenshot harness, which
+     * still composes the pre-v2.2 screen; running it while the v2.2 screens are up only
+     * re-inflates drawables and re-lays-out views nobody can see.
+     */
+    private void refreshLegacyChrome(boolean running, boolean switching) {
         tvStatus.setText(switching ? R.string.status_switching
                 : (running ? R.string.status_running : R.string.status_stopped));
         tvStatus.setBackgroundResource(running
@@ -1392,7 +1643,12 @@ public final class MainActivity extends Activity {
 
         btnToggle.setText(running ? R.string.btn_stop : R.string.btn_start);
         btnToggle.setTextColor(getResources().getColor(running
-                ? R.color.on_surface : R.color.on_primary));
+                ? R.color.on_danger : R.color.on_primary));
+        if (swRecordSound != null && swRecordSound.isChecked() != Prefs.microphoneEnabled()) {
+            suppressMic = true;
+            swRecordSound.setChecked(Prefs.microphoneEnabled());
+            suppressMic = false;
+        }
         btnToggle.setBackgroundResource(running
                 ? R.drawable.bg_btn_danger : R.drawable.bg_btn_primary);
 
@@ -1425,17 +1681,69 @@ public final class MainActivity extends Activity {
         String event = CameraStreamService.lastEvent;
         tvLastEvent.setVisibility(event == null || event.length() == 0 ? View.GONE : View.VISIBLE);
         tvLastEvent.setText(event == null ? "" : "最近事件：" + event);
-        refreshPreview(running);
-        CameraCatalog.Entry active = CameraStreamService.activeCamera;
-        if (active != lastActiveCamera) {
-            lastActiveCamera = active;
-            mergeActiveCamera();
-            normalizeLegacyCameraKey();
-            refreshCameraOptions();
-            refreshResolutionOptions();
+    }
+
+    private void refreshHomeSummaries() {
+        if (v22 == null) {
+            if (tvSettingsSummary != null) {
+                tvSettingsSummary.setText(HomeEntrySummaries.recording(
+                        Prefs.recordingMode(), Prefs.motionEnabled(), Prefs.soundEnabled()));
+            }
+            if (tvStreamSummary != null) {
+                int mode = Prefs.mode();
+                String label = mode >= 0 && mode < Prefs.MODE_LABELS.length ? Prefs.MODE_LABELS[mode] : "";
+                tvStreamSummary.setText(HomeEntrySummaries.stream(
+                        Prefs.outputWidth(), Prefs.outputHeight(), label));
+            }
         }
-        updateGeometryLabel();
-        refreshAddresses();
+        if (tvLibrarySummary == null) return;
+        long now = System.currentTimeMillis();
+        if (now - summaryAt < 3000 && summaryReady) return;
+        summaryAt = now;
+        final int token = ++summaryGeneration;
+        final String target = Prefs.recordingTarget();
+        final long quota = Prefs.recordingQuota();
+        final TimeZone zone = TimeZone.getDefault();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                String text;
+                try {
+                    List<HomeEntrySummaries.Clip> items = new ArrayList<HomeEntrySummaries.Clip>();
+                    for (RecordingStore.Clip clip : RecordingStore.open(
+                            getApplicationContext(), target, quota).list()) {
+                        items.add(new HomeEntrySummaries.Clip(clip.startTimeMs, clip.bytes));
+                    }
+                    int todayCount = 0;
+                    for (HomeEntrySummaries.Clip clip : items) {
+                        if (clip != null) todayCount++;
+                    }
+                    todayCount = HomeEntrySummaries.countToday(items, now, zone);
+                    final int shownToday = todayCount;
+                    final int shownTotal = items.size();
+                    text = HomeEntrySummaries.today(items, now, zone);
+                    handler.post(new Runnable() {
+                        @Override public void run() {
+                            v22Today = shownToday;
+                            v22Total = shownTotal;
+                            summaryReady = true;
+                            // The 1s refresher already redraws the entry cards; nudging
+                            // the whole screen from here doubled the work per second.
+                        }
+                    });
+                } catch (Exception failure) {
+                    text = HomeEntrySummaries.today(null, now, zone);
+                }
+                final String shown = text;
+                handler.post(new Runnable() {
+                    @Override public void run() {
+                        if (token == summaryGeneration && tvLibrarySummary != null
+                                && v22 == null) {
+                            tvLibrarySummary.setText(shown);
+                        }
+                    }
+                });
+            }
+        }, "afterglow-home-summary").start();
     }
 
     private boolean acceptPreview(FrameGeometry geometry, long generation, long epoch) {
@@ -1490,6 +1798,7 @@ public final class MainActivity extends Activity {
         ivPreview.setFrame(bmp, frame.geometry);
         ivPreview.setVisibility(View.VISIBLE);
         llPreviewEmpty.setVisibility(View.GONE);
+        if (v22 != null) v22.setPreview(bmp, frame.geometry);
     }
 
 
