@@ -328,7 +328,8 @@ final class V22Ui {
         boolean front = frontLens();
         String res = StreamPresets.label(Prefs.outputWidth(), Prefs.outputHeight());
         setTextIfChanged(deviceLine, deviceCaption(res));
-        if (ScreenSnapshot.preview != null) setPreview(ScreenSnapshot.preview);
+        if (ScreenSnapshot.preview != null)
+            setPreview(ScreenSnapshot.preview, ScreenSnapshot.previewGeometry);
         setTextIfChanged(previewClock, ScreenSnapshot.clock != null ? ScreenSnapshot.clock
                 : CLOCK.format(new Date()));
         previewClock.setVisibility(Prefs.watermarkEnabled() ? View.VISIBLE : View.GONE);

@@ -18,6 +18,8 @@ public final class ScreenSnapshot {
     public static boolean composeChrome;
     /** Placeholder preview used by screenshots. Live camera frames replace it. */
     public static Bitmap preview;
+    /** Transform behind {@link #preview}; without it the shot cannot show the crop band. */
+    public static FrameGeometry previewGeometry;
 
     private ScreenSnapshot() {}
 
@@ -33,5 +35,6 @@ public final class ScreenSnapshot {
         freezeMotion = false;
         composeChrome = false;
         preview = null;
+        previewGeometry = null;
     }
 }

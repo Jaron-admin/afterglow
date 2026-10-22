@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -48,6 +49,60 @@ public class RecordingUiShots {
     @Test
     @Config(sdk = 33, qualifiers = "w360dp-h800dp-port-night-xxhdpi")
     public void dark() throws Exception { capture("dark"); }
+
+    /**
+     * A 4:3 sensor feeding a 16:9 stream. The band the encoder discards has to be visible,
+     * otherwise the preview is hiding part of what the camera sees.
+     */
+    @Test public void fullFrame() throws Exception {
+        prepare();
+        screenNumbers();
+        Prefs.setOutputSize(1920, 1080);
+        ScreenSnapshot.preview = sensorFrame(ScreenSnapshot.preview);
+        ScreenSnapshot.previewGeometry = FrameGeometry.create(1440, 1080, 0, 1920, 1080, 7);
+        ActivityControllerHold<MainActivity> page = launch(MainActivity.class, new Intent());
+        try {
+            settle(6);
+            check(contains(root(page.activity), "开始推流"), "full-frame shot is missing the stream button");
+            shot(page.activity, "light", "home-frame", false);
+        } finally { page.close(); }
+    }
+
+    /** Landscape keeps the picture beside its settings instead of stacking them. */
+    @Test
+    @Config(sdk = 33, qualifiers = "w800dp-h360dp-land-xxhdpi")
+    public void landscape() throws Exception {
+        prepare();
+        screenNumbers();
+        Prefs.setOutputSize(1920, 1080);
+        ActivityControllerHold<MainActivity> page = launch(MainActivity.class, new Intent());
+        try {
+            settle(6);
+            check(contains(root(page.activity), "开始推流"), "landscape is missing the stream button");
+            check(contains(root(page.activity), "录制声音"), "landscape is missing the settings column");
+            wide(page.activity, file("light", "home-landscape"));
+        } finally { page.close(); }
+
+        Intent stream = new Intent();
+        stream.putExtra(MainActivity.EXTRA_STREAM_PAGE, true);
+        stream.putExtra(MainActivity.EXTRA_PAGE_SHOT, "stream");
+        ActivityControllerHold<MainActivity> settings = launch(MainActivity.class, stream);
+        try {
+            settle(6);
+            check(contains(root(settings.activity), "推流分辨率"), "landscape stream page is missing 推流分辨率");
+            check(contains(root(settings.activity), "接入 Home Assistant"), "landscape stream page is missing HA");
+            wide(settings.activity, file("light", "stream-landscape"));
+        } finally { settings.close(); }
+    }
+
+    /** The still is 16:9; stretch it into the 4:3 frame the sensor would report. */
+    private static Bitmap sensorFrame(Bitmap source) {
+        Bitmap frame = Bitmap.createBitmap(1440, 1080, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(frame);
+        canvas.drawBitmap(source, null, new android.graphics.Rect(0, 0, 1440, 1080),
+                new Paint(Paint.FILTER_BITMAP_FLAG));
+        return frame;
+    }
 
     private void capture(String theme) throws Exception {
         home(theme, "home-idle", false, false, false);
@@ -430,6 +485,16 @@ public class RecordingUiShots {
         int widthDp = Math.round(decor.getWidth() / density);
         int heightDp = Math.round(decor.getHeight() / density);
         check(widthDp == 360 && heightDp == 800, file.getName() + " viewport is " + widthDp + "x" + heightDp);
+        draw(decor, decor.getWidth(), decor.getHeight(), file);
+    }
+
+    /** Landscape viewport: the shot only means something if the pane really is wider than tall. */
+    private static void wide(Activity activity, File file) {
+        View decor = activity.getWindow().getDecorView();
+        float density = activity.getResources().getDisplayMetrics().density;
+        int widthDp = Math.round(decor.getWidth() / density);
+        int heightDp = Math.round(decor.getHeight() / density);
+        check(widthDp > heightDp, file.getName() + " viewport is " + widthDp + "x" + heightDp);
         draw(decor, decor.getWidth(), decor.getHeight(), file);
     }
 
