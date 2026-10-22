@@ -565,6 +565,15 @@ public final class MainActivity extends Activity {
             calibrate.setVisibility(View.VISIBLE);
             v22.hostAdvanced(calibrate);
         }
+        // Ratio and size are owned by the chip on the preview now; leaving the old spinners
+        // here was the duplication. The direction and the custom-size editors stay.
+        hide(R.id.llAspectRatio);
+        hide(R.id.llResolution);
+    }
+
+    private void hide(int id) {
+        View view = findViewById(id);
+        if (view != null) view.setVisibility(View.GONE);
     }
 
     /** Re-reads everything the moved legacy panel displays. */
@@ -799,8 +808,9 @@ public final class MainActivity extends Activity {
 
     private void showOutputEditors() {
         boolean custom = Prefs.outputLayout() == 2;
-        llAspectRatio.setVisibility(custom ? View.GONE : View.VISIBLE);
-        llResolution.setVisibility(custom ? View.GONE : View.VISIBLE);
+        // Ratio and resolution live in the preview menu; only the custom editors remain.
+        llAspectRatio.setVisibility(View.GONE);
+        llResolution.setVisibility(View.GONE);
         llCustomSize.setVisibility(custom ? View.VISIBLE : View.GONE);
     }
 

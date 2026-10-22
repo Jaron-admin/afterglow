@@ -77,6 +77,9 @@ final class V22Ui {
     private TextView deviceLine;
     private TextView previewClock;
     private LinearLayout resChipBox;
+    private LinearLayout resRatioRow;
+    private LinearLayout resSizeList;
+    private String resBuiltRatio;
     private ImageView resMic;
     private TextView resChip;
     private ImageView resChevron;
@@ -114,7 +117,6 @@ final class V22Ui {
     private TextView streamButton;
     private Motion.StatusPill miniPill;
     private TextView miniMeta;
-    private TextView streamResValue;
     private TextView lightNote;
     private PillSwitch streamSwitch;
     private PillSwitch lightStreamSwitch;
@@ -197,6 +199,13 @@ final class V22Ui {
         }
         split.fit(viewport);
         split.picture.requestLayout();
+        final Split target = split;
+        if (target.host != null) {
+            // The viewport is often still 0 during onCreate; settle once the tree is laid out.
+            target.host.post(new Runnable() {
+                @Override public void run() { target.fit(target.host.getHeight()); }
+            });
+        }
     }
 
     private LinearLayout.LayoutParams fillWidth() {
@@ -253,12 +262,13 @@ final class V22Ui {
             side.setFillViewport(false);
             side.setPadding(dp(16), 0, 0, 0);
             if (host != null) {
-                host.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-                    @Override public void onLayoutChange(View v, int l, int t, int r, int b,
-                                                         int ol, int ot, int or, int ob) {
-                        if (r - l != or - ol || b - t != ob - ot) fit(b - t);
-                    }
-                });
+                // Global layout, not a bounds listener: the first pass can already arrive
+                // with the ScrollView measured, and a bounds listener would never fire,
+                // leaving the page as tall as its content and the whole screen scrolling.
+                host.getViewTreeObserver().addOnGlobalLayoutListener(
+                        new ViewTreeObserver.OnGlobalLayoutListener() {
+                            @Override public void onGlobalLayout() { fit(host.getHeight()); }
+                        });
             }
         }
 
@@ -419,7 +429,6 @@ final class V22Ui {
             else pill(miniPill, "预览", R.color.pill_idle, false);
         }
         if (miniMeta != null) miniMeta.setText((front ? "前置" : "后置") + "镜头 · " + Prefs.manualRotationDegrees() + "°");
-        if (streamResValue != null) streamResValue.setText(res + " ›");
         paintStreamChip(streaming, paused);
         refreshAddresses(streaming);
         suppress = true;
@@ -518,7 +527,7 @@ final class V22Ui {
         homeOverlay = overlay;
         if (resMenuView != null && resMenuView.getParent() == null) {
             FrameLayout.LayoutParams menuLp = new FrameLayout.LayoutParams(
-                    dp(196), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
+                    dp(216), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
             overlay.addView(resMenuView, menuLp);
         }
         preview.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
@@ -544,6 +553,9 @@ final class V22Ui {
         homeOverlay.getLocationInWindow(menuOverlay);
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) resMenuView.getLayoutParams();
         int top = menuFrame[1] - menuOverlay[1] + dp(6);
+        int menuHeight = resMenuView.getMeasuredHeight();
+        if (menuHeight > 0) top = Math.min(top, homeOverlay.getHeight() - menuHeight - dp(8));
+        top = Math.max(dp(8), top);
         int right = Math.max(dp(8), homeOverlay.getWidth()
                 - (menuFrame[0] - menuOverlay[0] + previewFrame.getWidth()) + dp(8));
         if (lp.topMargin == top && lp.rightMargin == right && lp.gravity == (Gravity.TOP | Gravity.RIGHT)) return;
@@ -562,12 +574,7 @@ final class V22Ui {
         LinearLayout rest = column();
         rest.addView(section("画面"));
         LinearLayout picture = card();
-        picture.addView(valueRow("aspect", R.color.ink_orange, R.color.tonal_orange, "推流分辨率",
-                "主界面预览右下角也能切", StreamPresets.label(Prefs.outputWidth(), Prefs.outputHeight()),
-                new View.OnClickListener() {
-                    @Override public void onClick(View v) { cycleResolution(); }
-                }));
-        picture.addView(hairline());
+        // Resolution and ratio live in the chip on the preview; this card keeps the rest.
         picture.addView(lensRow());
         picture.addView(hairline());
         picture.addView(rotationBlock());
@@ -842,44 +849,40 @@ final class V22Ui {
                 == Configuration.ORIENTATION_LANDSCAPE;
     }
 
+    /**
+     * The one place that owns the output shape. The chip on the picture opens it, so the
+     * 画面与推流 page no longer repeats a resolution row and 高级设置 keeps only the
+     * direction and the custom-size editors.
+     */
     private View resolutionMenu() {
         LinearLayout menu = plainCard();
         menu.setPadding(dp(6), dp(6), dp(6), dp(6));
         TextView title = text("推流分辨率", 12, color(R.color.on_surface_variant), false);
-        title.setPadding(dp(10), dp(6), dp(10), dp(4));
+        title.setPadding(dp(10), dp(6), dp(10), dp(2));
         menu.addView(title);
-        for (int i = 0; i < StreamPresets.SIZES.length; i++) {
-            final int width = StreamPresets.SIZES[i][0];
-            final int height = StreamPresets.SIZES[i][1];
-            LinearLayout row = row();
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setMinimumHeight(dp(40));
-            row.setPadding(dp(8), 0, dp(10), 0);
-            row.setTag(width + "x" + height);
-            ImageView mark = new ImageView(activity);
-            mark.setImageDrawable(Glyph.drawable(activity, "check", 16, color(R.color.ink_orange), 2.6f));
-            row.addView(mark, new LinearLayout.LayoutParams(dp(16), dp(16)));
-            TextView label = text(StreamPresets.LABELS[i], 15, color(R.color.on_surface), false);
-            label.setPadding(dp(8), 0, 0, 0);
-            row.addView(label);
-            View spacer = new View(activity);
-            row.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
-            TextView pixels = text(width + "×" + height, 12, color(R.color.on_surface_disabled), false);
-            row.addView(pixels);
-            row.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    resMenu = false;
-                    activity.v22SetResolution(width, height);
-                }
-            });
-            menu.addView(row);
-        }
+
+        resRatioRow = row();
+        resRatioRow.setPadding(dp(4), 0, dp(4), dp(6));
+        HorizontalScrollView ratios = new HorizontalScrollView(activity);
+        ratios.setHorizontalScrollBarEnabled(false);
+        ratios.setClipToPadding(false);
+        ratios.addView(resRatioRow, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        menu.addView(ratios);
+
         View line = new View(activity);
         line.setBackgroundColor(color(R.color.outline));
-        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(
+        menu.addView(line, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+
+        resSizeList = column();
+        menu.addView(resSizeList);
+
+        View foot = new View(activity);
+        foot.setBackgroundColor(color(R.color.outline));
+        LinearLayout.LayoutParams footLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
-        lineLp.topMargin = dp(4);
-        menu.addView(line, lineLp);
+        menu.addView(foot, footLp);
         LinearLayout hint = row();
         hint.setPadding(dp(8), dp(6), dp(8), dp(4));
         ImageView info = new ImageView(activity);
@@ -891,15 +894,137 @@ final class V22Ui {
         hint.addView(hintText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         menu.addView(hint);
         menu.setVisibility(View.GONE);
+        menu.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                 int ol, int ot, int or, int ob) {
+                if (b - t != ob - ot) positionResolutionMenu();
+            }
+        });
+        rebuildResolutionMenu();
         return menu;
     }
 
+    /**
+     * Rebuilds the ratio chips and one row per size tier. Three rows keep the popup small
+     * enough to sit under the chip; exotic sizes stay in 高级设置's custom editors.
+     */
+    private void rebuildResolutionMenu() {
+        if (resRatioRow == null || resSizeList == null) return;
+        int width = Prefs.outputWidth();
+        int height = Prefs.outputHeight();
+        int layout = Prefs.outputLayout();
+        OutputSizeOptions.Ratio current = OutputSizeOptions.ratioOf(width, height);
+        resRatioRow.removeAllViews();
+        for (OutputSizeOptions.Ratio ratio : OutputSizeOptions.ratios(null, width, height)) {
+            final OutputSizeOptions.Ratio target = ratio;
+            TextView chip = text(ratio.label(layout), 12, color(R.color.on_surface), true);
+            chip.setPadding(dp(10), dp(6), dp(10), dp(6));
+            chip.setTag(ratio.toString());
+            chip.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { pickRatio(target); }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(6);
+            resRatioRow.addView(chip, lp);
+        }
+        resSizeList.removeAllViews();
+        boolean listed = false;
+        for (int[] tier : StreamPresets.SIZES) {
+            int[] size = closest(current, layout, (long) tier[0] * tier[1]);
+            if (size == null || isListed(size[0], size[1])) continue;
+            resSizeList.addView(sizeRow(size[0], size[1]));
+            if (size[0] == width && size[1] == height) listed = true;
+        }
+        // A custom size is not one of the tiers; keep it visible so the check has a home.
+        if (!listed) resSizeList.addView(sizeRow(width, height));
+        resBuiltRatio = current.toString();
+        markResolution();
+    }
+
+    private boolean isListed(int width, int height) {
+        String tag = width + "x" + height;
+        for (int i = 0; i < resSizeList.getChildCount(); i++) {
+            if (tag.equals(resSizeList.getChildAt(i).getTag())) return true;
+        }
+        return false;
+    }
+
+    /** Size in {@code ratio} whose pixel count is closest to {@code budget}. */
+    private int[] closest(OutputSizeOptions.Ratio ratio, int layout, long budget) {
+        int[] best = null;
+        long gap = Long.MAX_VALUE;
+        for (int[] size : OutputSizeOptions.sizes(ratio, layout, null,
+                Prefs.outputWidth(), Prefs.outputHeight())) {
+            long distance = Math.abs((long) size[0] * size[1] - budget);
+            if (distance < gap) { gap = distance; best = size; }
+        }
+        return best;
+    }
+
+    private View sizeRow(final int width, final int height) {
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setMinimumHeight(dp(40));
+        line.setPadding(dp(8), 0, dp(10), 0);
+        line.setTag(width + "x" + height);
+        ImageView mark = new ImageView(activity);
+        mark.setImageDrawable(Glyph.drawable(activity, "check", 16, color(R.color.ink_orange), 2.6f));
+        line.addView(mark, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        TextView label = text(width + "×" + height, 14, color(R.color.on_surface), false);
+        label.setPadding(dp(8), 0, 0, 0);
+        line.addView(label);
+        View spacer = new View(activity);
+        line.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+        String preset = StreamPresets.label(width, height);
+        TextView tail = text(preset.equals(width + "×" + height) ? ""
+                : preset, 12, color(R.color.on_surface_disabled), false);
+        line.addView(tail);
+        line.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                resMenu = false;
+                activity.v22SetResolution(width, height);
+            }
+        });
+        return line;
+    }
+
+    /**
+     * Switching the shape keeps the pixel budget, so 16:9 1080p becomes 4:3 1440x1080 rather
+     * than silently dropping to the smallest size in the new list.
+     */
+    private void pickRatio(OutputSizeOptions.Ratio ratio) {
+        int width = Prefs.outputWidth();
+        int height = Prefs.outputHeight();
+        long target = (long) width * height;
+        int[] best = null;
+        long gap = Long.MAX_VALUE;
+        for (int[] tier : StreamPresets.SIZES) {
+            int[] size = closest(ratio, Prefs.outputLayout(), (long) tier[0] * tier[1]);
+            if (size == null) continue;
+            long distance = Math.abs((long) size[0] * size[1] - target);
+            if (distance < gap) { gap = distance; best = size; }
+        }
+        if (best == null) return;
+        if (best[0] == width && best[1] == height) { markResolution(); return; }
+        resMenu = false;
+        activity.v22SetResolution(best[0], best[1]);
+    }
+
     private void markResolution() {
-        if (!(resMenuView instanceof LinearLayout)) return;
-        LinearLayout menu = (LinearLayout) resMenuView;
+        if (resRatioRow == null || resSizeList == null) return;
+        String ratio = OutputSizeOptions.ratioOf(Prefs.outputWidth(), Prefs.outputHeight()).toString();
+        if (!ratio.equals(resBuiltRatio)) { rebuildResolutionMenu(); return; }
         String current = Prefs.outputWidth() + "x" + Prefs.outputHeight();
-        for (int i = 0; i < menu.getChildCount(); i++) {
-            View child = menu.getChildAt(i);
+        for (int i = 0; i < resRatioRow.getChildCount(); i++) {
+            View chip = resRatioRow.getChildAt(i);
+            if (!(chip instanceof TextView)) continue;
+            boolean on = ratio.equals(chip.getTag());
+            ((TextView) chip).setTextColor(color(on ? R.color.ink_orange : R.color.on_surface));
+            chip.setBackground(on ? round(color(R.color.tonal_orange), 10) : null);
+        }
+        for (int i = 0; i < resSizeList.getChildCount(); i++) {
+            View child = resSizeList.getChildAt(i);
             if (!(child instanceof LinearLayout) || child.getTag() == null) continue;
             LinearLayout row = (LinearLayout) child;
             boolean on = current.equals(row.getTag());
@@ -1301,26 +1426,6 @@ final class V22Ui {
         image.setImageDrawable(Glyph.drawable(activity, String.valueOf(image.getTag()), 16, ink, 2f));
     }
 
-    private void cycleResolution() {
-        int width = Prefs.outputWidth();
-        int height = Prefs.outputHeight();
-        int index = StreamPresets.indexOf(width, height);
-        int next;
-        if (index >= 0) {
-            next = (index + 1) % StreamPresets.SIZES.length;
-        } else {
-            // A custom size (set in 高级设置) is not a preset. Step to the next larger
-            // preset instead of jumping to a fixed one, so the control never moves
-            // backwards and the stored value is only replaced by an explicit tap.
-            long pixels = (long) width * height;
-            next = 0;
-            for (int i = StreamPresets.SIZES.length - 1; i >= 0; i--) {
-                if ((long) StreamPresets.SIZES[i][0] * StreamPresets.SIZES[i][1] > pixels) next = i;
-            }
-        }
-        activity.v22SetResolution(StreamPresets.SIZES[next][0], StreamPresets.SIZES[next][1]);
-    }
-
     private View lensRow() {
         LinearLayout row = row();
         row.setMinimumHeight(dp(64));
@@ -1500,7 +1605,6 @@ final class V22Ui {
         TextView valueView = text(value, 14, color(R.color.on_surface_variant), false);
         valueView.setCompoundDrawables(null, null,
                 Glyph.drawable(activity, "chev", 18, color(R.color.on_surface_variant), 2f), null);
-        if ("aspect".equals(icon)) streamResValue = valueView;
         LinearLayout row = (LinearLayout) labeledRow(icon, ink, well, title, caption(cap), valueView);
         row.setOnClickListener(click);
         return row;

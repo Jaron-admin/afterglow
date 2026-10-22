@@ -37,6 +37,8 @@ public final class RecordingSettingsActivity extends Activity {
     private View advancedAnchor;
     private boolean advanced;
     private boolean suppress;
+    /** Recording state the visible card was built from; onResume rebuilds on a mismatch. */
+    private boolean renderedRecording;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -102,12 +104,20 @@ public final class RecordingSettingsActivity extends Activity {
         return y;
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        // Recording can also be started or stopped from the main screen while this page
+        // sits in the back stack; rebuild only when the state actually moved.
+        if (renderedRecording != CameraStreamService.recordingNow) rebuild();
+    }
+
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         state.putBoolean("advanced", advanced);
     }
 
     private void rebuild() {
+        renderedRecording = CameraStreamService.recordingNow;
         page.removeAllViews();
         page.addView(top());
         page.addView(recordCard());
@@ -150,8 +160,10 @@ public final class RecordingSettingsActivity extends Activity {
         TextView status = text(recording ? "录制中 · " + elapsed() : "未在录制", 16,
                 color(recording ? R.color.ink_red : R.color.on_surface), true);
         statusText.addView(status);
-        statusText.addView(caption(recording ? "满足触发条件时自动分段保存 · 今天已存 " + today() + " 段"
-                : "开始后，按下方触发条件自动录像"));
+        statusText.addView(caption(recording
+                ? "满足触发条件时自动分段保存 · 今天已存 " + today() + " 段"
+                : (CameraStreamService.running ? "开始后，按下方触发条件自动录像"
+                        : "不用开推流，本地直接录；按下方触发条件自动分段")));
         statusRow.addView(statusText);
         card.addView(statusRow);
         TextView button = text(recording ? "停止录制" : "开始录制", 17,
@@ -195,7 +207,13 @@ public final class RecordingSettingsActivity extends Activity {
                     Toast.makeText(RecordingSettingsActivity.this, "录制未能开始", Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (!start) CameraStreamService.recordingNow = false;
+                // The service flips these on its own thread; without the local update the
+                // card would rebuild from the old value and keep saying 开始录制 / 未在录制.
+                CameraStreamService.recordingNow = start;
+                CameraStreamService.recordingSinceMs = start
+                        ? (CameraStreamService.recordingSinceMs == 0
+                            ? System.currentTimeMillis() : CameraStreamService.recordingSinceMs)
+                        : 0;
                 Toast.makeText(RecordingSettingsActivity.this,
                         start ? "已开始录制" : "录制已停止，片段已保存", Toast.LENGTH_SHORT).show();
                 rebuild();

@@ -80,6 +80,13 @@ public class RecordingUiShots {
             settle(6);
             check(contains(root(page.activity), "开始推流"), "landscape is missing the stream button");
             check(contains(root(page.activity), "录制声音"), "landscape is missing the settings column");
+            // The page must fill the viewport exactly, otherwise the picture slides away
+            // while the settings column is being read.
+            ScrollView outer = firstScroll(root(page.activity));
+            check(outer != null, "landscape has no scroll view");
+            check(outer.getChildAt(0).getHeight() <= outer.getHeight(),
+                    "landscape still scrolls the whole page: content "
+                            + outer.getChildAt(0).getHeight() + " vs viewport " + outer.getHeight());
             wide(page.activity, file("light", "home-landscape"));
         } finally { page.close(); }
 
@@ -150,6 +157,25 @@ public class RecordingUiShots {
             check(contains(root(recordingPage.activity), "光线传感器"), "sensor method is missing");
             shot(recordingPage.activity, theme, "settings-recording", true);
         } finally { recordingPage.close(); }
+
+        // Idle device, no stream: tapping the button must flip the card, not just fire an intent.
+        prepare();
+        screenNumbers();
+        ActivityControllerHold<RecordingSettingsActivity> toggle = launch(RecordingSettingsActivity.class, new Intent());
+        try {
+            settle(6);
+            check(contains(root(toggle.activity), "未在录制"), "idle card should say 未在录制");
+            check(!CameraStreamService.recordingNow, "recording should start idle");
+            check(click(root(toggle.activity), "开始录制"), "could not tap 开始录制");
+            settle(4);
+            check(CameraStreamService.recordingNow, "tap did not start recording");
+            check(contains(root(toggle.activity), "停止录制"), "button still says 开始录制 after tap");
+            check(contains(root(toggle.activity), "录制中"), "status still says 未在录制 after tap");
+            check(click(root(toggle.activity), "停止录制"), "could not tap 停止录制");
+            settle(4);
+            check(!CameraStreamService.recordingNow, "tap did not stop recording");
+            check(contains(root(toggle.activity), "开始录制"), "button still says 停止录制 after stop");
+        } finally { toggle.close(); }
 
         prepare();
         screenNumbers();
@@ -395,6 +421,19 @@ public class RecordingUiShots {
         finally { meta.close(); }
     }
 
+    /** First ScrollView in the tree: the page host, not the settings column inside it. */
+    private static ScrollView firstScroll(View view) {
+        if (view instanceof ScrollView) return (ScrollView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                ScrollView found = firstScroll(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static View root(Activity activity) {
         return activity.getWindow().getDecorView();
     }
@@ -451,6 +490,33 @@ public class RecordingUiShots {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
                 Button found = button(group.getChildAt(i), label);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    /** Taps the clickable ancestor of the view labelled {@code label}; the button face owns the listener. */
+    private static boolean click(View view, String label) {
+        TextView text = exact(view, label);
+        if (text == null) return false;
+        View hit = text;
+        while (hit != null && !hit.isClickable()) {
+            android.view.ViewParent parent = hit.getParent();
+            hit = parent instanceof View ? (View) parent : null;
+        }
+        return hit != null && hit.performClick();
+    }
+
+    private static TextView exact(View view, String label) {
+        if (view instanceof TextView && view.getVisibility() == View.VISIBLE) {
+            CharSequence value = ((TextView) view).getText();
+            if (value != null && label.contentEquals(value)) return (TextView) view;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = exact(group.getChildAt(i), label);
                 if (found != null) return found;
             }
         }
