@@ -1125,8 +1125,10 @@ final class V22Ui {
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(30));
         if (!streaming) {
+            // Same orange ramp in both themes. Night primary_dark is the page
+            // color, used by the status bar; using it here paints a hard dark band.
             shape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
-            shape.setColors(new int[]{color(R.color.primary_button_top), color(R.color.primary_dark)});
+            shape.setColors(new int[]{0xFFF7743A, 0xFFE2561F});
             streamButton.setTextColor(Color.WHITE);
             streamMark.color = Color.WHITE;
             streamMark.square = false;
@@ -1514,15 +1516,22 @@ final class V22Ui {
             float density = getResources().getDisplayMetrics().density;
             float cx = getWidth() / 2f;
             float cy = getHeight() / 2f;
-            // Solid orange dot. The old mark was a flat 25% disc with a peach hole,
-            // which read as a peach circle and a thin ring. Handoff glow is
-            // 0 0 18px rgba(255,122,61,.45) around that dot.
-            float dot = 13f * density;
-            RectF box = new RectF(cx - dot, cy - dot, cx + dot, cy + dot);
-            Motion.discGlow(canvas, box, dot, Motion.ORANGE, 18f * density, 0.45f);
+            // 40dp mark. Gradient stops are fractions of the farthest corner,
+            // so the light spot stays small and the orange disc is not a ring.
+            // Outside that: a 25% orange rim, then 0 0 18px rgba(255,122,61,.45).
+            float outer = 20f * density;
+            float farthest = outer * (float) Math.sqrt(2.0);
+            float peach = 0.22f * farthest;
+            float solid = 0.46f * farthest;
+            RectF box = new RectF(cx - outer, cy - outer, cx + outer, cy + outer);
+            Motion.discGlow(canvas, box, outer, Motion.ORANGE, 18f * density, 0.45f);
             paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0x40FF7A3D);
+            canvas.drawCircle(cx, cy, outer, paint);
             paint.setColor(Motion.ORANGE);
-            canvas.drawCircle(cx, cy, dot, paint);
+            canvas.drawCircle(cx, cy, solid, paint);
+            paint.setColor(0xFFFFD2B5);
+            canvas.drawCircle(cx, cy, peach, paint);
         }
     }
 

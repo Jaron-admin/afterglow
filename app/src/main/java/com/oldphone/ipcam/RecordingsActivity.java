@@ -865,7 +865,12 @@ public final class RecordingsActivity extends Activity {
                 == Configuration.UI_MODE_NIGHT_YES;
     }
 
-    /** Light-theme list group. Shadow sits in the row padding; the face stays at 16dp. */
+    /**
+     * One card for a date group. Shadow and the rounded stroke belong to the
+     * group, so a row does not close its own shadow on the edge it shares.
+     * Light keeps the shadow in the row padding. Dark is the same shape with
+     * a stroke and no shadow.
+     */
     private final class GroupFace extends Drawable {
         private final boolean first;
         private final boolean last;
@@ -881,18 +886,27 @@ public final class RecordingsActivity extends Activity {
 
         @Override public void draw(Canvas canvas) {
             android.graphics.Rect bounds = getBounds();
-            int shade = dp(12);
+            boolean night = night();
+            int shade = night ? 0 : dp(12);
             float radius = dp(20);
             float top = first ? shade : 0f;
             float bottom = last ? shade : 0f;
             RectF face = new RectF(bounds.left + shade, bounds.top + top,
                     bounds.right - shade, bounds.bottom - bottom);
             if (face.width() <= 0f || face.height() <= 0f) return;
-            float shadowRadius = (first || last) ? radius : 0f;
-            Motion.lightCardShadow(canvas, face, shadowRadius, getResources().getDisplayMetrics().density);
-            float stroke = Math.max(1, dp(1));
-            RectF box = new RectF(face.left + stroke / 2f, face.top + stroke / 2f,
-                    face.right - stroke / 2f, face.bottom - stroke / 2f);
+            if (!night) {
+                float extend = dp(48);
+                RectF shape = new RectF(face);
+                if (!first) shape.top -= extend;
+                if (!last) shape.bottom += extend;
+                float shadowRadius = (first || last) ? radius : 0f;
+                Motion.lightCardShadow(canvas, shape, shadowRadius, getResources().getDisplayMetrics().density);
+            }
+            float stroke = Math.max(1f, dp(1));
+            float inset = stroke / 2f;
+            // Shared edges stay flush so the page cannot show between rows.
+            RectF box = new RectF(face.left + inset, first ? face.top + inset : face.top,
+                    face.right - inset, last ? face.bottom - inset : face.bottom);
             float topR = first ? radius : 0f;
             float botR = last ? radius : 0f;
             float[] radii = new float[] {topR, topR, topR, topR, botR, botR, botR, botR};
@@ -903,7 +917,42 @@ public final class RecordingsActivity extends Activity {
             canvas.drawPath(path, paint);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(stroke);
+            paint.setStrokeCap(Paint.Cap.BUTT);
             paint.setColor(getResources().getColor(R.color.outline));
+            strokeOutline(canvas, box, radius);
+        }
+
+        /** Outer card edge only. The shared row boundary stays open for the hairline. */
+        private void strokeOutline(Canvas canvas, RectF box, float radius) {
+            if (first && last) {
+                canvas.drawRoundRect(box, radius, radius, paint);
+                return;
+            }
+            float l = box.left;
+            float t = box.top;
+            float r = box.right;
+            float b = box.bottom;
+            if (!first && !last) {
+                canvas.drawLine(l, t, l, b, paint);
+                canvas.drawLine(r, t, r, b, paint);
+                return;
+            }
+            path.reset();
+            if (first) {
+                path.moveTo(r, b);
+                path.lineTo(r, t + radius);
+                path.arcTo(new RectF(r - 2f * radius, t, r, t + 2f * radius), 0f, -90f);
+                path.lineTo(l + radius, t);
+                path.arcTo(new RectF(l, t, l + 2f * radius, t + 2f * radius), 270f, -90f);
+                path.lineTo(l, b);
+            } else {
+                path.moveTo(l, t);
+                path.lineTo(l, b - radius);
+                path.arcTo(new RectF(l, b - 2f * radius, l + 2f * radius, b), 180f, -90f);
+                path.lineTo(r - radius, b);
+                path.arcTo(new RectF(r - 2f * radius, b - 2f * radius, r, b), 90f, -90f);
+                path.lineTo(r, t);
+            }
             canvas.drawPath(path, paint);
         }
 
@@ -1003,12 +1052,11 @@ public final class RecordingsActivity extends Activity {
             boolean marked = selected.contains(clip.id);
             if (night()) {
                 view.setPadding(0, 0, 0, 0);
-                view.setBackground(rowBackground(first, last, marked));
             } else {
                 int shade = dp(12);
                 view.setPadding(shade, first ? shade : 0, shade, last ? shade : 0);
-                view.setBackground(new GroupFace(first, last, marked));
             }
+            view.setBackground(new GroupFace(first, last, marked));
             View divider = view.findViewById(R.id.recordingDivider);
             if (divider != null) divider.setVisibility(last ? View.GONE : View.VISIBLE);
             StringBuilder spoken = new StringBuilder();
@@ -1020,21 +1068,6 @@ public final class RecordingsActivity extends Activity {
             view.setContentDescription(spoken.toString());
             return view;
         }
-    }
-
-    private GradientDrawable rowBackground(boolean first, boolean last, boolean marked) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(getResources().getColor(marked ? R.color.selection_bg : R.color.surface));
-        float radius = dp(20);
-        float[] radii = new float[8];
-        if (first) {
-            radii[0] = radii[1] = radii[2] = radii[3] = radius;
-        }
-        if (last) {
-            radii[4] = radii[5] = radii[6] = radii[7] = radius;
-        }
-        shape.setCornerRadii(radii);
-        return shape;
     }
 
     private Bitmap scenePlaceholder() {
