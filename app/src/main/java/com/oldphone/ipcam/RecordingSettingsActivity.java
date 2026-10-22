@@ -59,6 +59,7 @@ public final class RecordingSettingsActivity extends Activity {
         advanced = "settings-advanced".equals(shot) || (state != null && state.getBoolean("advanced"));
         ShotChrome.beforeContent(this);
         scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
         scroll.setBackgroundColor(color(R.color.background));
         page = column();
         page.setPadding(dp(16), dp(8), dp(16), dp(28));
@@ -264,17 +265,20 @@ public final class RecordingSettingsActivity extends Activity {
         card.addView(explanation());
         if (Prefs.recordLightEnabled()) card.addView(lightPanel());
         card.addView(sensitivity());
+        card.addView(hairline());
         card.addView(choiceRow("timer", R.color.ink_purple, R.color.tonal_purple,
                 "分段时长", "长录像按此时长切分保存", segmentLabel(), new View.OnClickListener() {
             @Override public void onClick(View v) { pickSegment(); }
         }));
         boolean follow = !Prefs.hasRecordSize();
+        card.addView(hairline());
         card.addView(choiceRow("aspect", R.color.ink_orange, R.color.tonal_orange,
                 "录制分辨率", StreamPresets.recordCaption(follow),
                 StreamPresets.recordLabel(follow, Prefs.recordWidth(), Prefs.recordHeight(),
                         Prefs.outputWidth(), Prefs.outputHeight()), new View.OnClickListener() {
                     @Override public void onClick(View v) { pickRecordSize(); }
                 }));
+        card.addView(hairline());
         card.addView(choiceRow("hd", R.color.ink_orange, R.color.tonal_orange,
                 "画质", "码率越高越清晰，也越占空间",
                 StreamPresets.qualityLabel(Prefs.getInt(Prefs.KEY_BITRATE, 2)), new View.OnClickListener() {
@@ -520,6 +524,7 @@ public final class RecordingSettingsActivity extends Activity {
         if (!advanced) return card;
         String used = ScreenSnapshot.usedSpace != null ? ScreenSnapshot.usedSpace : usedLabel();
         String free = ScreenSnapshot.freeSpace != null ? ScreenSnapshot.freeSpace : freeLabel();
+        card.addView(rule(true));
         card.addView(settingHead("folder", R.color.ink_cyan, R.color.tonal_cyan,
                 "存储空间", "已用 " + used + " · 剩余 " + free, null));
         View bar = new View(this);
@@ -545,8 +550,10 @@ public final class RecordingSettingsActivity extends Activity {
                 rebuild();
             }
         });
+        card.addView(hairline());
         card.addView(settingHead("trash", R.color.ink_red, R.color.tonal_red,
                 "自动清理", clean ? "保留最近 " + keepDays + " 天，空间不足时删最旧的" : "已关闭，需手动删除", cleanSwitch));
+        card.addView(hairline());
         card.addView(choiceRow("bolt", R.color.ink_orange, R.color.tonal_orange,
                 "帧率", "越低越省电、省空间", fpsLabel(), new View.OnClickListener() {
             @Override public void onClick(View v) { pickFps(); }
@@ -640,6 +647,22 @@ public final class RecordingSettingsActivity extends Activity {
             try { StreamControls.reconfigure(this); }
             catch (Throwable ignored) { }
         }
+    }
+
+    /** 1dp rule between list rows, inset to the title (16 + 40 + 14). */
+    private View hairline() { return rule(false); }
+
+    private View rule(boolean full) {
+        View line = new View(this);
+        line.setBackgroundColor(color(R.color.outline));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        if (!full) {
+            lp.leftMargin = dp(70);
+            lp.rightMargin = dp(16);
+        }
+        line.setLayoutParams(lp);
+        return line;
     }
 
     private View choiceRow(String icon, int ink, int well, String title, String cap, String value,

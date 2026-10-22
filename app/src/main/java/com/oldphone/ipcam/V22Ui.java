@@ -371,8 +371,11 @@ final class V22Ui {
                 new View.OnClickListener() {
                     @Override public void onClick(View v) { cycleResolution(); }
                 }));
+        picture.addView(hairline());
         picture.addView(lensRow());
+        picture.addView(hairline());
         picture.addView(rotationBlock());
+        picture.addView(hairline());
         picture.addView(switchRow("text", R.color.on_surface_variant, R.color.tonal_grey, "时间水印",
                 "在画面左下角显示日期时间", Prefs.watermarkEnabled(), false, new PillSwitch.Listener() {
                     @Override public void onChanged(boolean on) {
@@ -407,6 +410,7 @@ final class V22Ui {
         addressBox = addressBlock();
         push.addView(addressBox);
         lightStreamSwitch = null;
+        push.addView(hairline());
         push.addView(switchRow("sun", R.color.ink_amber, R.color.tonal_amber, "光感控制推流",
                 "与录制共用亮度阈值。亮度不达标时的行为取决于感光方式。",
                 Prefs.streamLightEnabled(), false, new PillSwitch.Listener() {
@@ -444,6 +448,7 @@ final class V22Ui {
                     }
                 }));
         haNotifySwitch = null;
+        ((LinearLayout) haBody).addView(hairline());
         ((LinearLayout) haBody).addView(switchRow("bell", R.color.ink_orange, R.color.tonal_orange, "触发事件通知",
                 "画面变动 / 声音触发时发送事件", Prefs.haNotifyEnabled(), false, new PillSwitch.Listener() {
                     @Override public void onChanged(boolean on) {
@@ -461,6 +466,7 @@ final class V22Ui {
         entity.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { copy(entityId.getText().toString(), "已复制实体 ID"); }
         });
+        ((LinearLayout) haBody).addView(hairline());
         ((LinearLayout) haBody).addView(entity);
         ha.addView(haBody);
         page.addView(ha);
@@ -1010,6 +1016,7 @@ final class V22Ui {
         LinearLayout row = row();
         row.setMinimumHeight(dp(64));
         row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(8), dp(16), dp(8));
         row.addView(Glyph.well(activity, "camera", color(R.color.tonal_cyan), color(R.color.ink_cyan)),
                 new LinearLayout.LayoutParams(dp(40), dp(40)));
         TextView lensTitle = text("镜头切换", 16, color(R.color.on_surface), true);
@@ -1272,6 +1279,7 @@ final class V22Ui {
         scroll.setFillViewport(true);
         scroll.setClipChildren(false);
         scroll.setClipToPadding(false);
+        scroll.setVerticalScrollBarEnabled(false);
         scroll.setBackgroundColor(color(R.color.background));
         return scroll;
     }
@@ -1321,6 +1329,18 @@ final class V22Ui {
         LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.HORIZONTAL);
         return layout;
+    }
+
+    /** 1dp rule between list rows, inset to the title (16 + 40 + 14). */
+    private View hairline() {
+        View line = new View(activity);
+        line.setBackgroundColor(color(R.color.outline));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        lp.leftMargin = dp(70);
+        lp.rightMargin = dp(16);
+        line.setLayoutParams(lp);
+        return line;
     }
 
     private View gap(View child, int left, int top, int right, int bottom) {

@@ -112,9 +112,19 @@ final class Motion {
             float peak = still ? 0f : glow(getContext());
             float radius = 20f * density;
             if (!still) {
+                // Light pages need the CSS-sized blur (sigma ≈ blur/2) or the halo
+                // disappears into the pale background. Dark already matches the shot,
+                // so its kernel stays tight. Both fade before the screen edge.
+                boolean night = (getResources().getConfiguration().uiMode
+                        & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                        == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+                float pagePad = 16f * density;
+                float screenLeft = pad - pagePad;
+                float screenRight = Math.max(screenLeft + 1f, getWidth() - screenLeft);
                 drawShadow(canvas, box, radius, ORANGE,
                         lerp(14f, 26f, peak) * density, lerp(2f, 6f, peak) * density,
-                        lerp(0.22f, 0.50f, peak), 0f, false);
+                        lerp(0.22f, 0.50f, peak), 0f, false,
+                        night ? 3f : 2f, screenLeft, screenRight, 10f * density);
                 drawShadow(canvas, box, radius, 0xFFFF8C50,
                         lerp(18f, 26f, peak) * density, lerp(2f, 3f, peak) * density,
                         lerp(0.18f, 0.30f, peak), 0f, true);
@@ -270,11 +280,21 @@ final class Motion {
     /**
      * Soft shadow that follows the rounded shape. A blurred mask fades to nothing,
      * so the fringe is not a stack of hard-edged strokes.
+     * The offset is applied to the shadow shape before the blur. Punching the
+     * original box afterwards keeps the face clear without leaving a page-colored
+     * slab where a shifted hole used to sit.
      */
     private static void drawShadow(Canvas canvas, RectF box, float radius, int color,
                                    float blur, float spread, float alpha, float dy, boolean inset) {
+        drawShadow(canvas, box, radius, color, blur, spread, alpha, dy, inset, 3f, 0f, 0f, 0f);
+    }
+
+    private static void drawShadow(Canvas canvas, RectF box, float radius, int color,
+                                   float blur, float spread, float alpha, float dy, boolean inset,
+                                   float kernelDivisor, float fadeLeft, float fadeRight, float fadeSpan) {
         if (alpha <= 0.004f || blur < 1f) return;
-        float reach = blur + Math.max(0f, spread) + Math.abs(dy) + 2f;
+        int pass = Math.max(1, Math.round(blur / Math.max(1f, kernelDivisor)));
+        float reach = Math.max(0f, spread) + Math.abs(dy) + pass * 3f + 8f;
         int left = (int) Math.floor(box.left - reach);
         int top = (int) Math.floor(box.top - reach);
         int width = (int) Math.ceil(box.right + reach) - left;
@@ -287,13 +307,13 @@ final class Motion {
         float rad = Math.min(radius + Math.max(0f, spread), Math.min(box.width(), box.height()) / 2f + spread);
         RectF shape = new RectF(box);
         shape.inset(-Math.max(0f, spread), -Math.max(0f, spread));
+        shape.offset(0f, dy);
         shape.offset(-left, -top);
         mask.drawRoundRect(shape, Math.max(1f, rad), Math.max(1f, rad), paint);
         int[] pixels = new int[width * height];
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
         int[] channel = new int[pixels.length];
         for (int i = 0; i < pixels.length; i++) channel[i] = pixels[i] >>> 24;
-        int pass = Math.max(1, Math.round(blur / 3f));
         boxBlur(channel, width, height, pass);
         boxBlur(channel, width, height, pass);
         boxBlur(channel, width, height, pass);
@@ -309,7 +329,7 @@ final class Motion {
                 boolean inside = containsRound(px, py, box, limit);
                 int maskAlpha = channel[i];
                 int fringe = inset ? (inside ? 255 - maskAlpha : 0) : (inside ? 0 : maskAlpha);
-                int out = Math.round(fringe * alpha);
+                int out = Math.round(fringe * alpha * edgeFade(px, fadeLeft, fadeRight, fadeSpan));
                 if (out < 2) {
                     pixels[i] = 0;
                 } else {
@@ -318,8 +338,19 @@ final class Motion {
             }
         }
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
-        canvas.drawBitmap(bitmap, left, top + dy, null);
+        canvas.drawBitmap(bitmap, left, top, null);
         bitmap.recycle();
+    }
+
+    /** 0 at the screen edge, 1 once {@code span} inside it. */
+    private static float edgeFade(float x, float left, float right, float span) {
+        if (span <= 0f || right <= left) return 1f;
+        float ramp = 1f;
+        if (x < left + span) ramp = Math.min(ramp, (x - left) / span);
+        if (x > right - span) ramp = Math.min(ramp, (right - x) / span);
+        if (ramp <= 0f) return 0f;
+        if (ramp >= 1f) return 1f;
+        return ramp * ramp * (3f - 2f * ramp);
     }
 
     private static boolean containsRound(float x, float y, RectF box, float radius) {
