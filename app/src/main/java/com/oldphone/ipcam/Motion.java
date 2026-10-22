@@ -125,9 +125,17 @@ final class Motion {
                         lerp(14f, 26f, peak) * density, lerp(2f, 6f, peak) * density,
                         lerp(0.22f, 0.50f, peak), 0f, false,
                         night ? 3f : 2f, screenLeft, screenRight, 10f * density);
-                drawShadow(canvas, box, radius, 0xFFFF8C50,
-                        lerp(18f, 26f, peak) * density, lerp(2f, 3f, peak) * density,
-                        lerp(0.18f, 0.30f, peak), 0f, true);
+                // Dark inner glow stays on the tighter kernel. Light uses the CSS
+                // inset blur (sigma ≈ blur/2) from handoff §6.
+                if (night) {
+                    drawShadow(canvas, box, radius, 0xFFFF8C50,
+                            lerp(18f, 26f, peak) * density, lerp(2f, 3f, peak) * density,
+                            lerp(0.18f, 0.30f, peak), 0f, true);
+                } else {
+                    drawShadow(canvas, box, radius, 0xFFFF8C50,
+                            lerp(18f, 26f, peak) * density, lerp(2f, 3f, peak) * density,
+                            lerp(0.18f, 0.30f, peak), 0f, true, 2f, 0f, 0f, 0f);
+                }
             }
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth((still ? 2f : lerp(2f, 3f, peak)) * density);
@@ -275,6 +283,18 @@ final class Motion {
             setVisibility(VISIBLE);
             dot.invalidate();
         }
+    }
+
+    /** Handoff card shadow, light theme only: 0 1px 2px /5% and 0 4px 16px /5%. */
+    static void lightCardShadow(Canvas canvas, RectF box, float radius, float density) {
+        int ink = 0xFF3C2814;
+        drawShadow(canvas, box, radius, ink, 2f * density, 0f, 0.05f, 1f * density, false, 2f, 0f, 0f, 0f);
+        drawShadow(canvas, box, radius, ink, 16f * density, 0f, 0.05f, 4f * density, false, 2f, 0f, 0f, 0f);
+    }
+
+    /** Soft disc glow. Blur is in pixels; the kernel matches a CSS box-shadow. */
+    static void discGlow(Canvas canvas, RectF box, float radius, int color, float blur, float alpha) {
+        drawShadow(canvas, box, radius, color, blur, 0f, alpha, 0f, false, 2f, 0f, 0f, 0f);
     }
 
     /**

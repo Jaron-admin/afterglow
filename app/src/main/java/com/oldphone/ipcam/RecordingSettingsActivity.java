@@ -65,6 +65,8 @@ public final class RecordingSettingsActivity extends Activity {
         page.setPadding(dp(16), dp(8), dp(16), dp(28));
         scroll.addView(page);
         scroll.setClipChildren(false);
+        scroll.setClipToPadding(false);
+        page.setClipChildren(false);
         setContentView(scroll);
         ShotChrome.afterContent(this);
         rebuild();
@@ -796,11 +798,7 @@ public final class RecordingSettingsActivity extends Activity {
     private void applyColors() {}
 
     private LinearLayout card() {
-        LinearLayout card = column();
-        GradientDrawable shape = round(color(R.color.surface), 20);
-        shape.setStroke(dp(1), color(R.color.outline));
-        card.setBackground(shape);
-        return card;
+        return new V22Ui.SurfaceCard(this);
     }
 
     private TextView section(String label) {
@@ -826,6 +824,7 @@ public final class RecordingSettingsActivity extends Activity {
     private LinearLayout column() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setClipChildren(false);
         return layout;
     }
 

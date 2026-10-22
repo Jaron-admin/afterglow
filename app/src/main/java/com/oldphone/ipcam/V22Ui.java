@@ -3,16 +3,19 @@ package com.oldphone.ipcam;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Environment;
 import android.os.StatFs;
 import android.provider.Settings;
@@ -24,6 +27,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -477,8 +481,13 @@ final class V22Ui {
         LinearLayout row = row();
         row.setPadding(0, dp(12), 0, dp(28));
         row.setGravity(Gravity.CENTER_VERTICAL);
-        View logo = new LogoView(activity);
-        row.addView(logo, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        LogoView logo = new LogoView(activity);
+        int glowPad = dp(32);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(40) + glowPad * 2, dp(40) + glowPad * 2);
+        logoLp.setMargins(-glowPad, -glowPad, -glowPad, -glowPad);
+        row.addView(logo, logoLp);
         LinearLayout text = column();
         text.setPadding(dp(12), 0, 0, 0);
         TextView title = text("余光", 28, color(R.color.on_surface), true);
@@ -493,13 +502,19 @@ final class V22Ui {
     private FrameLayout preview(boolean mini) {
         final FrameLayout frame = new FrameLayout(activity);
         frame.setBackground(round(color(R.color.preview_bg), 20));
+        frame.setClipChildren(false);
+        frame.setClipToPadding(false);
+        FrameLayout clip = roundedClip();
+        frame.addView(clip, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         RoomScene scene = new RoomScene(activity);
         ImageView image = new ImageView(activity);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         image.setVisibility(View.GONE);
-        frame.addView(scene, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        frame.addView(image, new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams fill = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        clip.addView(scene, fill);
+        clip.addView(image, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         if (mini) {
             miniScene = scene;
@@ -523,8 +538,6 @@ final class V22Ui {
             previewImage = image;
             glow = new Motion.Plate(activity);
             glow.setClickable(false);
-            frame.setClipChildren(false);
-            frame.setClipToPadding(false);
             FrameLayout.LayoutParams glowLp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
             int glowPad = Motion.glowPad(activity);
@@ -597,7 +610,7 @@ final class V22Ui {
     }
 
     private View resolutionMenu() {
-        LinearLayout menu = card();
+        LinearLayout menu = plainCard();
         menu.setPadding(dp(6), dp(6), dp(6), dp(6));
         TextView title = text("推流分辨率", 12, color(R.color.on_surface_variant), false);
         title.setPadding(dp(10), dp(6), dp(10), dp(4));
@@ -702,9 +715,9 @@ final class V22Ui {
         LinearLayout box = column();
         box.setBackground(round(color(R.color.surface), 16));
         box.setPadding(dp(12), dp(9), dp(12), dp(9));
-        box.setGravity(Gravity.CENTER_HORIZONTAL);
-        value.setGravity(Gravity.CENTER);
-        label.setGravity(Gravity.CENTER);
+        box.setGravity(Gravity.LEFT);
+        value.setGravity(Gravity.LEFT);
+        label.setGravity(Gravity.LEFT);
         box.addView(value);
         box.addView(label);
         return box;
@@ -1293,11 +1306,46 @@ final class V22Ui {
     }
 
     private LinearLayout card() {
+        return new SurfaceCard(activity);
+    }
+
+    /** Popup and other surfaces that keep a stroke without the page-card shadow. */
+    private LinearLayout plainCard() {
         LinearLayout card = column();
         GradientDrawable shape = round(color(R.color.surface), 20);
         shape.setStroke(dp(1), color(R.color.outline));
         card.setBackground(shape);
         return card;
+    }
+
+    /** Clips the camera picture to the same 20dp radius as the preview stroke. */
+    private FrameLayout roundedClip() {
+        FrameLayout clip = new FrameLayout(activity) {
+            private final Path path = new Path();
+
+            @Override protected void dispatchDraw(Canvas canvas) {
+                float radius = 20f * getResources().getDisplayMetrics().density;
+                path.reset();
+                path.addRoundRect(new RectF(0, 0, getWidth(), getHeight()), radius, radius, Path.Direction.CW);
+                int save = canvas.save();
+                canvas.clipPath(path);
+                super.dispatchDraw(canvas);
+                canvas.restoreToCount(save);
+            }
+        };
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            clip.setOutlineProvider(new ViewOutlineProvider() {
+                @Override public void getOutline(View view, Outline outline) {
+                    int width = view.getWidth();
+                    int height = view.getHeight();
+                    if (width <= 0 || height <= 0) return;
+                    outline.setRoundRect(0, 0, width, height,
+                            20f * view.getResources().getDisplayMetrics().density);
+                }
+            });
+            clip.setClipToOutline(true);
+        }
+        return clip;
     }
 
     private TextView section(String label) {
@@ -1322,12 +1370,14 @@ final class V22Ui {
     private LinearLayout column() {
         LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setClipChildren(false);
         return layout;
     }
 
     private LinearLayout row() {
         LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.HORIZONTAL);
+        layout.setClipChildren(false);
         return layout;
     }
 
@@ -1461,13 +1511,18 @@ final class V22Ui {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         LogoView(Context context) { super(context); }
         @Override protected void onDraw(Canvas canvas) {
-            float c = getWidth() / 2f;
-            paint.setColor(0x40FF7A3D);
-            canvas.drawCircle(c, c, c, paint);
-            paint.setColor(0xFFFF7A3D);
-            canvas.drawCircle(c, c, c * 0.46f, paint);
-            paint.setColor(0xFFFFD2B5);
-            canvas.drawCircle(c, c, c * 0.22f, paint);
+            float density = getResources().getDisplayMetrics().density;
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            // Solid orange dot. The old mark was a flat 25% disc with a peach hole,
+            // which read as a peach circle and a thin ring. Handoff glow is
+            // 0 0 18px rgba(255,122,61,.45) around that dot.
+            float dot = 13f * density;
+            RectF box = new RectF(cx - dot, cy - dot, cx + dot, cy + dot);
+            Motion.discGlow(canvas, box, dot, Motion.ORANGE, 18f * density, 0.45f);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Motion.ORANGE);
+            canvas.drawCircle(cx, cy, dot, paint);
         }
     }
 
@@ -1491,6 +1546,90 @@ final class V22Ui {
             paint.setStrokeWidth(getWidth() * 0.03f);
             canvas.drawPath(plant, paint);
             paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    /**
+     * Surface card. Light theme keeps the handoff shadow inside extra padding and
+     * pulls that padding back with negative margins so the face stays put.
+     * Dark theme is the stroked surface only.
+     */
+    static class SurfaceCard extends LinearLayout {
+        private final int shadow;
+        private final float radius;
+        private final int stroke;
+        private final int fill;
+        private final int outline;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int faceLeft, faceTop, faceRight, faceBottom;
+        private boolean faceKnown;
+
+        SurfaceCard(Context context) {
+            super(context);
+            setOrientation(VERTICAL);
+            setWillNotDraw(false);
+            setClipChildren(false);
+            float density = context.getResources().getDisplayMetrics().density;
+            boolean night = (context.getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK)
+                    == Configuration.UI_MODE_NIGHT_YES;
+            shadow = night ? 0 : Math.round(12f * density);
+            radius = 20f * density;
+            stroke = Math.max(1, Math.round(density));
+            fill = context.getResources().getColor(R.color.surface);
+            outline = context.getResources().getColor(R.color.outline);
+            super.setPadding(shadow, shadow, shadow, shadow);
+        }
+
+        @Override public void setPadding(int left, int top, int right, int bottom) {
+            super.setPadding(left + shadow, top + shadow, right + shadow, bottom + shadow);
+        }
+
+        @Override public void setMinimumHeight(int minHeight) {
+            super.setMinimumHeight(minHeight + shadow * 2);
+        }
+
+        @Override public void setLayoutParams(ViewGroup.LayoutParams params) {
+            if (shadow > 0 && params instanceof MarginLayoutParams) {
+                MarginLayoutParams margin = (MarginLayoutParams) params;
+                boolean already = faceKnown
+                        && margin.leftMargin == faceLeft - shadow
+                        && margin.topMargin == faceTop - shadow
+                        && margin.rightMargin == faceRight - shadow
+                        && margin.bottomMargin == faceBottom - shadow;
+                if (!already) {
+                    faceLeft = margin.leftMargin;
+                    faceTop = margin.topMargin;
+                    faceRight = margin.rightMargin;
+                    faceBottom = margin.bottomMargin;
+                    faceKnown = true;
+                    margin.leftMargin = faceLeft - shadow;
+                    margin.topMargin = faceTop - shadow;
+                    margin.rightMargin = faceRight - shadow;
+                    margin.bottomMargin = faceBottom - shadow;
+                }
+            }
+            super.setLayoutParams(params);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            RectF face = new RectF(shadow, shadow, getWidth() - shadow, getHeight() - shadow);
+            if (face.width() <= 0f || face.height() <= 0f) {
+                super.onDraw(canvas);
+                return;
+            }
+            if (shadow > 0) {
+                Motion.lightCardShadow(canvas, face, radius, getResources().getDisplayMetrics().density);
+            }
+            float inset = stroke / 2f;
+            RectF box = new RectF(face.left + inset, face.top + inset, face.right - inset, face.bottom - inset);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(fill);
+            canvas.drawRoundRect(box, radius, radius, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(stroke);
+            paint.setColor(outline);
+            canvas.drawRoundRect(box, radius, radius, paint);
         }
     }
 }

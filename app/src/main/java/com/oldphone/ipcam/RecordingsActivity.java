@@ -6,14 +6,17 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -147,6 +150,11 @@ public final class RecordingsActivity extends Activity {
         emptyTitle = (TextView) findViewById(R.id.recordingEmptyTitle);
         emptyBody = (TextView) findViewById(R.id.recordingEmptyBody);
         list = (ListView) findViewById(R.id.recordingList);
+        list.setVerticalScrollBarEnabled(false);
+        if (!night()) {
+            int shade = dp(12);
+            list.setPadding(dp(16) - shade, list.getPaddingTop(), dp(16) - shade, list.getPaddingBottom());
+        }
         selectionBar = findViewById(R.id.recordingSelection);
         selectionCount = (TextView) findViewById(R.id.recordingSelectionCount);
         adapter = new RowAdapter();
@@ -852,6 +860,58 @@ public final class RecordingsActivity extends Activity {
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
+    private boolean night() {
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /** Light-theme list group. Shadow sits in the row padding; the face stays at 16dp. */
+    private final class GroupFace extends Drawable {
+        private final boolean first;
+        private final boolean last;
+        private final boolean marked;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+
+        GroupFace(boolean first, boolean last, boolean marked) {
+            this.first = first;
+            this.last = last;
+            this.marked = marked;
+        }
+
+        @Override public void draw(Canvas canvas) {
+            android.graphics.Rect bounds = getBounds();
+            int shade = dp(12);
+            float radius = dp(20);
+            float top = first ? shade : 0f;
+            float bottom = last ? shade : 0f;
+            RectF face = new RectF(bounds.left + shade, bounds.top + top,
+                    bounds.right - shade, bounds.bottom - bottom);
+            if (face.width() <= 0f || face.height() <= 0f) return;
+            float shadowRadius = (first || last) ? radius : 0f;
+            Motion.lightCardShadow(canvas, face, shadowRadius, getResources().getDisplayMetrics().density);
+            float stroke = Math.max(1, dp(1));
+            RectF box = new RectF(face.left + stroke / 2f, face.top + stroke / 2f,
+                    face.right - stroke / 2f, face.bottom - stroke / 2f);
+            float topR = first ? radius : 0f;
+            float botR = last ? radius : 0f;
+            float[] radii = new float[] {topR, topR, topR, topR, botR, botR, botR, botR};
+            path.reset();
+            path.addRoundRect(box, radii, Path.Direction.CW);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(getResources().getColor(marked ? R.color.selection_bg : R.color.surface));
+            canvas.drawPath(path, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(stroke);
+            paint.setColor(getResources().getColor(R.color.outline));
+            canvas.drawPath(path, paint);
+        }
+
+        @Override public void setAlpha(int alpha) {}
+        @Override public void setColorFilter(android.graphics.ColorFilter filter) {}
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+    }
+
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         state.putString("target", selectedTarget);
@@ -903,6 +963,7 @@ public final class RecordingsActivity extends Activity {
                 ((TextView) header.findViewById(R.id.recordingHeaderTitle)).setText(row.header);
                 ((TextView) header.findViewById(R.id.recordingHeaderDate)).setText(row.dateLine);
                 ((TextView) header.findViewById(R.id.recordingHeaderCount)).setText(row.count + " 段");
+                if (!night()) header.setPadding(dp(16), dp(8), dp(16), 0);
                 return header;
             }
             View view = convert != null && convert.findViewById(R.id.recordingTime) != null ? convert
@@ -939,7 +1000,15 @@ public final class RecordingsActivity extends Activity {
             mark.setChecked(selected.contains(clip.id));
             boolean first = position == 0 || rows.get(position - 1).clip == null;
             boolean last = position == rows.size() - 1 || rows.get(position + 1).clip == null;
-            view.setBackground(rowBackground(first, last, selected.contains(clip.id)));
+            boolean marked = selected.contains(clip.id);
+            if (night()) {
+                view.setPadding(0, 0, 0, 0);
+                view.setBackground(rowBackground(first, last, marked));
+            } else {
+                int shade = dp(12);
+                view.setPadding(shade, first ? shade : 0, shade, last ? shade : 0);
+                view.setBackground(new GroupFace(first, last, marked));
+            }
             View divider = view.findViewById(R.id.recordingDivider);
             if (divider != null) divider.setVisibility(last ? View.GONE : View.VISIBLE);
             StringBuilder spoken = new StringBuilder();
