@@ -13,6 +13,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -29,6 +31,7 @@ public final class RecordingSettingsActivity extends Activity {
     private ScrollView scroll;
     private LinearLayout page;
     private View lightAnchor;
+    private View advancedAnchor;
     private boolean advanced;
     private boolean suppress;
 
@@ -51,18 +54,28 @@ public final class RecordingSettingsActivity extends Activity {
             }
         }
         advanced = "settings-advanced".equals(shot) || (state != null && state.getBoolean("advanced"));
+        ShotChrome.beforeContent(this);
         scroll = new ScrollView(this);
         scroll.setBackgroundColor(color(R.color.background));
         page = column();
         page.setPadding(dp(16), dp(8), dp(16), dp(28));
         scroll.addView(page);
+        scroll.setClipChildren(false);
         setContentView(scroll);
+        ShotChrome.afterContent(this);
         rebuild();
         if (Prefs.recordLightEnabled() && ("settings-light".equals(shot)
                 || (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LIGHT, false)))) {
             scroll.post(new Runnable() {
                 @Override public void run() {
-                    if (lightAnchor != null) scroll.smoothScrollTo(0, Math.max(0, lightAnchor.getTop() - dp(80)));
+                    if (lightAnchor != null) scroll.scrollTo(0, Math.max(0, lightAnchor.getTop() - dp(150)));
+                }
+            });
+        }
+        if ("settings-advanced".equals(shot)) {
+            scroll.post(new Runnable() {
+                @Override public void run() {
+                    if (advancedAnchor != null) scroll.scrollTo(0, Math.max(0, advancedAnchor.getTop() - dp(230)));
                 }
             });
         }
@@ -86,7 +99,9 @@ public final class RecordingSettingsActivity extends Activity {
 
     private View top() {
         LinearLayout block = column();
-        TextView back = text("‹", 24, color(R.color.on_surface), false);
+        ImageView back = new ImageView(this);
+        back.setImageDrawable(Glyph.drawable(this, "back", 24, color(R.color.on_surface), 2f));
+        back.setScaleType(ImageView.ScaleType.CENTER);
         back.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { finish(); }
         });
@@ -102,14 +117,31 @@ public final class RecordingSettingsActivity extends Activity {
         boolean recording = CameraStreamService.recordingNow;
         LinearLayout card = card();
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        LinearLayout statusRow = row();
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        Motion.BreathDot dot = new Motion.BreathDot(this);
+        dot.color = recording ? Motion.RED : color(R.color.on_surface_variant);
+        dot.breathe = recording && !Motion.reduced(this);
+        statusRow.setClipChildren(false);
+        statusRow.addView(dot, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        LinearLayout statusText = column();
+        statusText.setPadding(dp(8), 0, 0, 0);
         TextView status = text(recording ? "录制中 · " + elapsed() : "未在录制", 16,
                 color(recording ? R.color.ink_red : R.color.on_surface), true);
-        card.addView(status);
-        card.addView(caption(recording ? "满足触发条件时自动分段保存 · 今天已存 " + today() + " 段"
+        statusText.addView(status);
+        statusText.addView(caption(recording ? "满足触发条件时自动分段保存 · 今天已存 " + today() + " 段"
                 : "开始后，按下方触发条件自动录像"));
-        TextView button = text(recording ? "停止录制" : "开始录制", 17, Color.WHITE, true);
+        statusRow.addView(statusText);
+        card.addView(statusRow);
+        TextView button = text(recording ? "停止录制" : "开始录制", 17,
+                recording ? Color.WHITE : color(R.color.ink_red), true);
         button.setGravity(Gravity.CENTER);
         button.setMinimumHeight(dp(52));
+        Motion.Mark mark = new Motion.Mark(this);
+        mark.square = recording;
+        mark.color = recording ? Color.WHITE : color(R.color.ink_red);
+        button.setCompoundDrawables(markDrawable(mark), null, null, null);
+        button.setCompoundDrawablePadding(dp(8));
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(26));
         if (recording) {
@@ -121,10 +153,10 @@ public final class RecordingSettingsActivity extends Activity {
             button.setTextColor(color(R.color.ink_red));
         }
         button.setBackground(shape);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
-        lp.topMargin = dp(14);
-        button.setLayoutParams(lp);
+        int extra = dp(28);
+        Motion.Halo halo = new Motion.Halo(this);
+        halo.inset = extra;
+        halo.mode = recording && !Motion.reduced(this) ? Motion.Halo.RED : Motion.Halo.NONE;
         button.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 boolean start = !CameraStreamService.recordingNow;
@@ -144,13 +176,44 @@ public final class RecordingSettingsActivity extends Activity {
                 rebuild();
             }
         });
-        card.addView(button);
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setClipChildren(false);
+        card.setClipChildren(false);
+        wrap.addView(halo, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        buttonLp.setMargins(extra, extra, extra, extra);
+        wrap.addView(button, buttonLp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52) + extra * 2);
+        lp.topMargin = dp(14) - extra;
+        lp.leftMargin = -extra;
+        lp.rightMargin = -extra;
+        lp.bottomMargin = -extra;
+        wrap.setLayoutParams(lp);
+        card.addView(wrap);
         return card;
+    }
+
+    private android.graphics.drawable.Drawable markDrawable(Motion.Mark mark) {
+        int size = dp(22);
+        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
+                size, size, android.graphics.Bitmap.Config.ARGB_8888);
+        mark.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY));
+        mark.layout(0, 0, size, size);
+        mark.draw(new android.graphics.Canvas(bitmap));
+        android.graphics.drawable.BitmapDrawable drawable =
+                new android.graphics.drawable.BitmapDrawable(getResources(), bitmap);
+        drawable.setBounds(0, 0, size, size);
+        return drawable;
     }
 
     private View commonCard() {
         LinearLayout card = card();
-        card.addView(labeled("触发方式", "可多选，并选择组合方式"));
+        card.addView(settingHead("motion", R.color.ink_orange, R.color.tonal_orange,
+                "触发方式", "可多选，并选择组合方式", null));
         LinearLayout chips = row();
         chips.setPadding(dp(16), 0, dp(16), 0);
         chips.addView(trigger("画面变动", Prefs.motionEnabled(), R.color.tonal_orange, R.color.ink_orange, new View.OnClickListener() {
@@ -179,16 +242,19 @@ public final class RecordingSettingsActivity extends Activity {
         card.addView(explanation());
         if (Prefs.recordLightEnabled()) card.addView(lightPanel());
         card.addView(sensitivity());
-        card.addView(choiceRow("分段时长", "长录像按此时长切分保存", segmentLabel(), new View.OnClickListener() {
+        card.addView(choiceRow("timer", R.color.ink_purple, R.color.tonal_purple,
+                "分段时长", "长录像按此时长切分保存", segmentLabel(), new View.OnClickListener() {
             @Override public void onClick(View v) { pickSegment(); }
         }));
         boolean follow = !Prefs.hasRecordSize();
-        card.addView(choiceRow("录制分辨率", StreamPresets.recordCaption(follow),
+        card.addView(choiceRow("aspect", R.color.ink_orange, R.color.tonal_orange,
+                "录制分辨率", StreamPresets.recordCaption(follow),
                 StreamPresets.recordLabel(follow, Prefs.recordWidth(), Prefs.recordHeight(),
                         Prefs.outputWidth(), Prefs.outputHeight()), new View.OnClickListener() {
                     @Override public void onClick(View v) { pickRecordSize(); }
                 }));
-        card.addView(choiceRow("画质", "码率越高越清晰，也越占空间",
+        card.addView(choiceRow("hd", R.color.ink_orange, R.color.tonal_orange,
+                "画质", "码率越高越清晰，也越占空间",
                 StreamPresets.qualityLabel(Prefs.getInt(Prefs.KEY_BITRATE, 2)), new View.OnClickListener() {
                     @Override public void onClick(View v) { pickQuality(); }
                 }));
@@ -244,7 +310,8 @@ public final class RecordingSettingsActivity extends Activity {
                 rebuild();
             }
         });
-        block.addView(settingHead("光感控制录制", "够亮才触发 · 阈值 " + Prefs.lightThreshold() + "%", toggle));
+        block.addView(settingHead("sun", R.color.ink_amber, R.color.tonal_amber,
+                "光感控制录制", "够亮才触发 · 阈值 " + Prefs.lightThreshold() + "%", toggle));
         TextView method = text("感光方式", 13, color(R.color.on_surface), true);
         method.setPadding(dp(16), dp(4), dp(16), dp(6));
         block.addView(method);
@@ -304,7 +371,8 @@ public final class RecordingSettingsActivity extends Activity {
         LinearLayout block = column();
         int percent = Prefs.sensitivityPercent();
         String band = percent >= 70 ? "高" : percent >= 40 ? "中" : "低";
-        block.addView(settingHead("灵敏度", "越高越容易被小动作触发",
+        block.addView(settingHead("gauge", R.color.ink_cyan, R.color.tonal_cyan,
+                "灵敏度", "越高越容易被小动作触发",
                 text(band + " · " + percent, 14, color(R.color.ink_orange), true)));
         SeekBar slider = new SeekBar(this);
         slider.setMax(100);
@@ -329,8 +397,12 @@ public final class RecordingSettingsActivity extends Activity {
 
     private View advancedCard() {
         LinearLayout card = card();
-        TextView head = text("高级    " + (advanced ? "▴" : "▾"), 16, color(R.color.on_surface), true);
-        head.setPadding(dp(16), dp(16), dp(16), dp(4));
+        advancedAnchor = card;
+        ImageView chevron = new ImageView(this);
+        chevron.setImageDrawable(Glyph.drawable(this, "down", 22, color(R.color.on_surface_variant), 2f));
+        chevron.setRotation(advanced ? 180f : 0f);
+        View head = settingHead("tune", R.color.on_surface_variant, R.color.tonal_grey,
+                "高级", "自动清理、帧率、存储空间", chevron);
         head.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 advanced = !advanced;
@@ -338,11 +410,11 @@ public final class RecordingSettingsActivity extends Activity {
             }
         });
         card.addView(head);
-        card.addView(caption("自动清理、帧率、存储空间"));
         if (!advanced) return card;
         String used = ScreenSnapshot.usedSpace != null ? ScreenSnapshot.usedSpace : usedLabel();
         String free = ScreenSnapshot.freeSpace != null ? ScreenSnapshot.freeSpace : freeLabel();
-        card.addView(settingHead("存储空间", "已用 " + used + " · 剩余 " + free, null));
+        card.addView(settingHead("folder", R.color.ink_cyan, R.color.tonal_cyan,
+                "存储空间", "已用 " + used + " · 剩余 " + free, null));
         View bar = new View(this);
         int percent = ScreenSnapshot.usedPercent >= 0 ? ScreenSnapshot.usedPercent : 62;
         GradientDrawable track = round(color(R.color.surface_3), 3);
@@ -366,8 +438,10 @@ public final class RecordingSettingsActivity extends Activity {
                 rebuild();
             }
         });
-        card.addView(settingHead("自动清理", clean ? "保留最近 " + keepDays + " 天，空间不足时删最旧的" : "已关闭，需手动删除", cleanSwitch));
-        card.addView(choiceRow("帧率", "越低越省电、省空间", fpsLabel(), new View.OnClickListener() {
+        card.addView(settingHead("trash", R.color.ink_red, R.color.tonal_red,
+                "自动清理", clean ? "保留最近 " + keepDays + " 天，空间不足时删最旧的" : "已关闭，需手动删除", cleanSwitch));
+        card.addView(choiceRow("bolt", R.color.ink_orange, R.color.tonal_orange,
+                "帧率", "越低越省电、省空间", fpsLabel(), new View.OnClickListener() {
             @Override public void onClick(View v) { pickFps(); }
         }));
         return card;
@@ -461,18 +535,28 @@ public final class RecordingSettingsActivity extends Activity {
         }
     }
 
-    private View choiceRow(String title, String cap, String value, View.OnClickListener click) {
-        LinearLayout row = (LinearLayout) settingHead(title, cap, text(value + " ›", 14, color(R.color.on_surface_variant), false));
-        row.setOnClickListener(click);
-        return row;
+    private View choiceRow(String icon, int ink, int well, String title, String cap, String value,
+                           View.OnClickListener click) {
+        LinearLayout valueRow = row();
+        valueRow.setGravity(Gravity.CENTER_VERTICAL);
+        valueRow.addView(text(value, 14, color(R.color.on_surface_variant), false));
+        ImageView chevron = new ImageView(this);
+        chevron.setImageDrawable(Glyph.drawable(this, "chev", 18, color(R.color.on_surface_variant), 2f));
+        valueRow.addView(chevron, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        LinearLayout line = (LinearLayout) settingHead(icon, ink, well, title, cap, valueRow);
+        line.setOnClickListener(click);
+        return line;
     }
 
-    private View settingHead(String title, String cap, View trailing) {
+    private View settingHead(String icon, int ink, int well, String title, String cap, View trailing) {
         LinearLayout row = row();
         row.setMinimumHeight(dp(64));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(8), dp(16), dp(8));
+        row.addView(Glyph.well(this, icon, color(well), color(ink)),
+                new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout text = column();
+        text.setPadding(dp(14), 0, dp(8), 0);
         text.addView(this.text(title, 16, color(R.color.on_surface), true));
         if (cap != null && cap.length() > 0) text.addView(caption(cap));
         row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -488,9 +572,18 @@ public final class RecordingSettingsActivity extends Activity {
         return block;
     }
 
-    private TextView trigger(String label, boolean on, int well, int ink, View.OnClickListener click) {
-        TextView chip = text((on ? "✓ " : "") + label, 14, color(on ? ink : R.color.on_surface), on);
-        chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+    private View trigger(String label, boolean on, int well, int ink, View.OnClickListener click) {
+        LinearLayout chip = row();
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(12), 0, dp(12), 0);
+        if (on) {
+            ImageView check = new ImageView(this);
+            check.setImageDrawable(Glyph.drawable(this, "check", 15, color(ink), 2.6f));
+            chip.addView(check, new LinearLayout.LayoutParams(dp(15), dp(15)));
+        }
+        TextView name = text(label, 14, color(on ? ink : R.color.on_surface), on);
+        if (on) name.setPadding(dp(4), 0, 0, 0);
+        chip.addView(name);
         GradientDrawable shape = round(on ? color(well) : Color.TRANSPARENT, 17);
         if (!on) shape.setStroke(dp(1), color(R.color.outline));
         chip.setBackground(shape);

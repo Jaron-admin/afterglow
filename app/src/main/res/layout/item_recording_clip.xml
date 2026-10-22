@@ -47,6 +47,13 @@
             android:orientation="horizontal" />
     </LinearLayout>
 
+    <ImageView
+        android:id="@+id/recordingOpen"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginLeft="8dp"
+        android:importantForAccessibility="no" />
+
     <TextView
         android:id="@+id/recordingLock"
         android:layout_width="48dp"

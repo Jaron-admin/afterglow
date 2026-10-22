@@ -72,6 +72,7 @@ public final class RecordingsActivity extends Activity {
         super.onCreate(state);
         Prefs.init(this);
         ActivityOrientation.apply(this);
+        ShotChrome.beforeContent(this);
         if (state != null) {
             selectedTarget = state.getString("target", "");
             selecting = state.getBoolean("selecting");
@@ -79,6 +80,7 @@ public final class RecordingsActivity extends Activity {
             addAll(pendingExport, state.getStringArray("export"));
         }
         setContentView(R.layout.activity_recordings);
+        ShotChrome.afterContent(this);
         storage = (Spinner) findViewById(R.id.recordingStorage);
         titleView = (TextView) findViewById(R.id.recordingTitle);
         notice = (TextView) findViewById(R.id.recordingNotice);
@@ -140,6 +142,12 @@ public final class RecordingsActivity extends Activity {
             }
             public void onNothingSelected(AdapterView<?> parent) { }
         });
+        android.widget.Button export = (android.widget.Button) findViewById(R.id.recordingExport);
+        export.setCompoundDrawables(Glyph.drawable(this, "export", 18,
+                getResources().getColor(R.color.on_primary), 2f), null, null, null);
+        android.widget.Button delete = (android.widget.Button) findViewById(R.id.recordingDelete);
+        delete.setCompoundDrawables(Glyph.drawable(this, "trash", 18,
+                getResources().getColor(R.color.danger), 2f), null, null, null);
         findViewById(R.id.recordingExport).setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) { exportSelected(); }
         });
@@ -326,7 +334,13 @@ public final class RecordingsActivity extends Activity {
         boolean on = code.equals(reasonFilter);
         chip.setText(label);
         chip.setTextSize(14);
+        chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
         chip.setPadding(dp(12), dp(6), dp(12), dp(6));
+        int dot = filterDot(code);
+        if (dot != 0) {
+            chip.setCompoundDrawables(dotDrawable(dot), null, null, null);
+            chip.setCompoundDrawablePadding(dp(6));
+        }
         chip.setTextColor(getResources().getColor(on ? R.color.on_surface : R.color.on_surface_variant));
         chip.setBackgroundResource(on ? R.drawable.bg_card : R.drawable.bg_field);
         chip.setOnClickListener(new View.OnClickListener() {
@@ -340,6 +354,23 @@ public final class RecordingsActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.rightMargin = dp(8);
         row.addView(chip, lp);
+    }
+
+    private int filterDot(String code) {
+        if ("motion".equals(code)) return R.color.primary;
+        if ("sound".equals(code)) return R.color.secondary;
+        if ("timer".equals(code)) return R.color.purple;
+        if ("light".equals(code)) return R.color.amber;
+        return 0;
+    }
+
+    private android.graphics.drawable.Drawable dotDrawable(int color) {
+        int size = dp(8);
+        android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+        dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        dot.setColor(getResources().getColor(color));
+        dot.setBounds(0, 0, size, size);
+        return dot;
     }
 
     private List<RecordingStore.Clip> chosen() {
@@ -737,6 +768,10 @@ public final class RecordingsActivity extends Activity {
             lock.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View button) { lock(clip); }
             });
+            ImageView open = (ImageView) view.findViewById(R.id.recordingOpen);
+            open.setImageDrawable(Glyph.drawable(RecordingsActivity.this, "open", 18,
+                    getResources().getColor(R.color.on_surface_variant), 2f));
+            open.setVisibility(selecting ? View.GONE : View.VISIBLE);
             mark.setVisibility(selecting ? View.VISIBLE : View.GONE);
             mark.setChecked(selected.contains(clip.id));
             view.setBackgroundColor(selected.contains(clip.id)
@@ -744,7 +779,8 @@ public final class RecordingsActivity extends Activity {
             StringBuilder spoken = new StringBuilder();
             spoken.append(clock(clip.startTimeMs)).append("，").append(duration(clip.durationMs));
             for (int i = 0; i < tags.getChildCount(); i++) {
-                spoken.append("，").append(((TextView) tags.getChildAt(i)).getText());
+                TextView label = tagLabel(tags.getChildAt(i));
+                if (label != null) spoken.append("，").append(label.getText());
             }
             view.setContentDescription(spoken.toString());
             return view;
@@ -754,28 +790,51 @@ public final class RecordingsActivity extends Activity {
     private void bindTags(LinearLayout tags, RecordingStore.Clip clip) {
         tags.removeAllViews();
         for (RecordingReasonLabels.Label label : RecordingReasonLabels.labels(clip.triggers, clip.reasons)) {
-            TextView chip = new TextView(this);
-            chip.setText(label.text);
-            chip.setTextSize(11);
-            chip.setPadding(dp(8), dp(2), dp(8), dp(2));
             int background = R.drawable.bg_tag_motion;
             int color = R.color.tag_motion_fg;
+            String icon = "motion";
             if ("sound".equals(label.code)) {
                 background = R.drawable.bg_tag_sound;
                 color = R.color.tag_sound_fg;
+                icon = "sound";
             } else if ("schedule".equals(label.code)) {
                 background = R.drawable.bg_tag_schedule;
                 color = R.color.tag_schedule_fg;
+                icon = "clock";
             } else if ("light".equals(label.code)) {
                 background = R.drawable.bg_tag_light;
                 color = R.color.tag_light_fg;
+                icon = "sun";
             }
+            LinearLayout chip = new LinearLayout(this);
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            chip.setPadding(dp(8), dp(2), dp(8), dp(2));
             chip.setBackgroundResource(background);
-            chip.setTextColor(getResources().getColor(color));
+            ImageView glyph = new ImageView(this);
+            glyph.setImageDrawable(Glyph.drawable(this, icon, 12, getResources().getColor(color), 2.6f));
+            chip.addView(glyph, new LinearLayout.LayoutParams(dp(12), dp(12)));
+            TextView name = new TextView(this);
+            name.setText(label.text);
+            name.setTextSize(11);
+            name.setTextColor(getResources().getColor(color));
+            name.setPadding(dp(4), 0, 0, 0);
+            chip.addView(name);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             params.rightMargin = dp(6);
             tags.addView(chip, params);
         }
+    }
+
+    private static TextView tagLabel(View chip) {
+        if (chip instanceof TextView) return (TextView) chip;
+        if (chip instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) chip;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (group.getChildAt(i) instanceof TextView) return (TextView) group.getChildAt(i);
+            }
+        }
+        return null;
     }
 }

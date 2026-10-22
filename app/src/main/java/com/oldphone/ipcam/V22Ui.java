@@ -3,8 +3,6 @@ package com.oldphone.ipcam;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -56,9 +54,10 @@ final class V22Ui {
     private TextView previewClock;
     private TextView resChip;
     private View resMenuView;
-    private TextView leftPill;
-    private TextView rightPill;
-    private View glow;
+    private Motion.StatusPill leftPill;
+    private Motion.StatusPill rightPill;
+    private Motion.Plate glow;
+    private Motion.Halo streamHalo;
     private TextView pauseNote;
     private TextView streamTime;
     private TextView streamTimeCaption;
@@ -70,7 +69,7 @@ final class V22Ui {
     private TextView libraryCard;
     private TextView streamCard;
     private TextView streamButton;
-    private TextView miniPill;
+    private Motion.StatusPill miniPill;
     private TextView miniMeta;
     private TextView streamResValue;
     private TextView addressBlock;
@@ -86,8 +85,6 @@ final class V22Ui {
     private PillSwitch haNotifySwitch;
     private TextView entityId;
     private boolean suppress;
-    private ObjectAnimator glowAnimator;
-
     V22Ui(MainActivity activity) { this.activity = activity; }
 
     void attach(ViewGroup content) {
@@ -142,7 +139,8 @@ final class V22Ui {
         boolean recording = CameraStreamService.recordingNow;
         boolean front = frontLens();
         String res = StreamPresets.label(Prefs.outputWidth(), Prefs.outputHeight());
-        deviceLine.setText("客厅 · " + android.os.Build.MODEL + " · " + res);
+        deviceLine.setText(deviceCaption(res));
+        if (ScreenSnapshot.preview != null) setPreview(ScreenSnapshot.preview);
         previewClock.setText(ScreenSnapshot.clock != null ? ScreenSnapshot.clock
                 : new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
         previewClock.setVisibility(Prefs.watermarkEnabled() ? View.VISIBLE : View.GONE);
@@ -182,7 +180,11 @@ final class V22Ui {
         if (recording && (live || paused)) {
             pill(rightPill, "录制中 · " + hms(recordElapsed()), R.color.pill_record, true);
         }
-        resChip.setText((Prefs.microphoneEnabled() ? "🎤 " : "") + (front ? "前置" : "后置") + " · " + res + " ▾");
+        resChip.setText((front ? "前置" : "后置") + " · " + res);
+        resChip.setCompoundDrawables(Prefs.microphoneEnabled()
+                ? Glyph.drawable(activity, "mic", 12, Color.WHITE, 2.4f) : null, null, null,
+                Glyph.drawable(activity, "down", 14, resMenu ? color(R.color.primary) : Color.WHITE, 2.4f));
+        resChip.setCompoundDrawablePadding(dp(4));
         resChip.setTextColor(resMenu ? color(R.color.primary) : Color.WHITE);
         resMenuView.setVisibility(resMenu ? View.VISIBLE : View.GONE);
         markResolution();
@@ -262,8 +264,14 @@ final class V22Ui {
         else if ("270°".equals(text)) on = Prefs.manualRotationDegrees() == 270;
         else if ("满足任一".equals(text) || "全部满足".equals(text)) return;
         if (on == null) return;
-        ((TextView) view).setBackground(on ? round(color(R.color.surface), 11) : null);
-        ((TextView) view).setTextColor(color(on ? R.color.on_surface : R.color.on_surface_variant));
+        TextView button = (TextView) view;
+        button.setBackground(on ? round(color(R.color.surface), 11) : null);
+        int ink = color(on ? R.color.on_surface : R.color.on_surface_variant);
+        button.setTextColor(ink);
+        if (button.getCompoundDrawables()[0] != null) {
+            String icon = text.startsWith("后置") ? "camera" : "person";
+            button.setCompoundDrawables(Glyph.drawable(activity, icon, 16, ink, 2f), null, null, null);
+        }
     }
 
     private View buildHome() {
@@ -275,11 +283,11 @@ final class V22Ui {
         page.addView(preview);
         page.addView(lensSegment());
         page.addView(stats());
-        streamButton = bigButton(false);
+        View streamControl = bigButton();
         streamButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22ToggleStream(); }
         });
-        page.addView(gap(streamButton, 0, 18, 0, 0));
+        page.addView(streamControl);
         pauseNote = caption("");
         pauseNote.setGravity(Gravity.CENTER);
         page.addView(gap(pauseNote, 0, 8, 0, 0));
@@ -410,7 +418,7 @@ final class V22Ui {
         text.setPadding(dp(12), 0, 0, 0);
         TextView title = text("余光", 28, color(R.color.on_surface), true);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        deviceLine = caption("客厅");
+        deviceLine = caption("");
         text.addView(title);
         text.addView(deviceLine);
         row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -448,10 +456,15 @@ final class V22Ui {
         } else {
             previewScene = scene;
             previewImage = image;
-            glow = new View(activity);
+            glow = new Motion.Plate(activity);
             glow.setClickable(false);
-            frame.addView(glow, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            frame.setClipChildren(false);
+            frame.setClipToPadding(false);
+            FrameLayout.LayoutParams glowLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            int glowPad = dp(40);
+            glowLp.setMargins(-glowPad, -glowPad, -glowPad, -glowPad);
+            frame.addView(glow, glowLp);
             leftPill = pillView();
             rightPill = pillView();
             previewClock = overlayText();
@@ -554,10 +567,10 @@ final class V22Ui {
 
     private View lensSegment() {
         LinearLayout seg = segment();
-        seg.addView(segmentButton("后置镜头", !frontLens(), new View.OnClickListener() {
+        seg.addView(segmentButton("camera", "后置镜头", !frontLens(), new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22SetLens(false); }
         }), segmentLp());
-        seg.addView(segmentButton("前置镜头", frontLens(), new View.OnClickListener() {
+        seg.addView(segmentButton("person", "前置镜头", frontLens(), new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22SetLens(true); }
         }), segmentLp());
         return gap(seg, 0, 12, 0, 0);
@@ -606,13 +619,13 @@ final class V22Ui {
         recordCard = caption("");
         libraryCard = caption("");
         streamCard = caption("");
-        row.addView(entry("录制设置", recordCard, R.color.tonal_orange, R.color.ink_orange, new View.OnClickListener() {
+        row.addView(entry("tune", "录制设置", recordCard, R.color.tonal_orange, R.color.ink_orange, new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22OpenSettings(false); }
         }), statLp());
-        row.addView(entry("录像列表", libraryCard, R.color.tonal_purple, R.color.ink_purple, new View.OnClickListener() {
+        row.addView(entry("film", "录像列表", libraryCard, R.color.tonal_purple, R.color.ink_purple, new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22OpenLibrary(); }
         }), statLp());
-        row.addView(entry("画面与推流", streamCard, R.color.tonal_cyan, R.color.ink_cyan, new View.OnClickListener() {
+        row.addView(entry("cast", "画面与推流", streamCard, R.color.tonal_cyan, R.color.ink_cyan, new View.OnClickListener() {
             @Override public void onClick(View v) {
                 showStream(true);
                 refresh();
@@ -621,15 +634,12 @@ final class V22Ui {
         return row;
     }
 
-    private View entry(String title, TextView summary, int well, int ink, View.OnClickListener click) {
+    private View entry(String icon, String title, TextView summary, int well, int ink, View.OnClickListener click) {
         LinearLayout card = card();
         card.setMinimumHeight(dp(118));
         card.setOnClickListener(click);
-        TextView wellView = text("●", 16, color(ink), true);
-        wellView.setGravity(Gravity.CENTER);
-        wellView.setBackground(round(color(well), 20));
-        LinearLayout.LayoutParams wellLp = new LinearLayout.LayoutParams(dp(32), dp(32));
-        card.addView(wellView, wellLp);
+        card.addView(Glyph.well(activity, icon, color(well), color(ink)),
+                new LinearLayout.LayoutParams(dp(40), dp(40)));
         TextView name = text(title, 14, color(R.color.on_surface), true);
         name.setPadding(0, dp(8), 0, 0);
         summary.setTextColor(color(R.color.on_surface_variant));
@@ -682,8 +692,11 @@ final class V22Ui {
         LinearLayout row = row();
         row.setMinimumHeight(dp(64));
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(text("镜头切换", 16, color(R.color.on_surface), true),
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(Glyph.well(activity, "camera", color(R.color.tonal_cyan), color(R.color.ink_cyan)),
+                new LinearLayout.LayoutParams(dp(40), dp(40)));
+        TextView lensTitle = text("镜头切换", 16, color(R.color.on_surface), true);
+        lensTitle.setPadding(dp(14), 0, 0, 0);
+        row.addView(lensTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         LinearLayout seg = segment();
         seg.addView(segmentButton("后置", !frontLens(), new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22SetLens(false); }
@@ -715,8 +728,9 @@ final class V22Ui {
     private View topBar(String title, String subtitle, boolean back) {
         LinearLayout block = column();
         if (back) {
-            TextView button = text("‹", 24, color(R.color.on_surface), false);
-            button.setGravity(Gravity.CENTER);
+            ImageView button = new ImageView(activity);
+            button.setImageDrawable(Glyph.drawable(activity, "back", 24, color(R.color.on_surface), 2f));
+            button.setScaleType(ImageView.ScaleType.CENTER);
             button.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     showStream(false);
@@ -732,65 +746,83 @@ final class V22Ui {
         return block;
     }
 
-    private TextView bigButton(boolean stop) {
-        TextView button = text("开始推流", 18, Color.WHITE, true);
-        button.setGravity(Gravity.CENTER);
-        button.setMinimumHeight(dp(60));
-        button.setTypeface(Typeface.DEFAULT_BOLD);
-        return button;
+    private View bigButton() {
+        int extra = dp(36);
+        FrameLayout wrap = new FrameLayout(activity);
+        wrap.setClipChildren(false);
+        streamHalo = new Motion.Halo(activity);
+        streamHalo.inset = extra;
+        streamButton = text("开始推流", 18, Color.WHITE, true);
+        streamButton.setGravity(Gravity.CENTER);
+        streamButton.setMinimumHeight(dp(60));
+        streamButton.setTypeface(Typeface.DEFAULT_BOLD);
+        wrap.addView(streamHalo, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(60));
+        buttonLp.setMargins(extra, extra, extra, extra);
+        wrap.addView(streamButton, buttonLp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(60) + extra * 2);
+        lp.leftMargin = -extra;
+        lp.rightMargin = -extra;
+        lp.topMargin = dp(18) - extra;
+        lp.bottomMargin = -extra;
+        wrap.setLayoutParams(lp);
+        return wrap;
     }
 
     private void styleStreamButton(boolean streaming, boolean paused) {
         streamButton.setText(streaming ? "停止推流" : "开始推流");
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(30));
+        Motion.Mark mark = streamButton.getTag() instanceof Motion.Mark
+                ? (Motion.Mark) streamButton.getTag() : new Motion.Mark(activity);
+        streamButton.setTag(mark);
         if (!streaming) {
             shape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
             shape.setColors(new int[]{color(R.color.primary_button_top), color(R.color.primary_dark)});
             streamButton.setTextColor(Color.WHITE);
+            mark.color = Color.WHITE;
+            mark.square = false;
+            streamHalo.mode = Motion.Halo.SHADOW;
         } else {
             shape.setColor(color(R.color.tonal_orange));
-            shape.setStroke(dp(2), color(R.color.primary));
             streamButton.setTextColor(color(R.color.ink_orange));
+            mark.color = color(R.color.ink_orange);
+            mark.square = true;
+            streamHalo.mode = paused || Motion.reduced(activity) ? Motion.Halo.STATIC : Motion.Halo.ORANGE;
         }
+        mark.invalidate();
+        streamButton.setCompoundDrawablesWithIntrinsicBounds(markBitmap(mark), null, null, null);
+        streamButton.setCompoundDrawablePadding(dp(8));
         streamButton.setBackground(shape);
-        streamButton.setAlpha(paused ? 1f : 1f);
+        streamHalo.invalidate();
+    }
+
+    private android.graphics.drawable.Drawable markBitmap(Motion.Mark mark) {
+        int size = dp(22);
+        android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
+        mark.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY));
+        mark.layout(0, 0, size, size);
+        mark.draw(new android.graphics.Canvas(bitmap));
+        android.graphics.drawable.BitmapDrawable drawable = new android.graphics.drawable.BitmapDrawable(activity.getResources(), bitmap);
+        drawable.setBounds(0, 0, size, size);
+        return drawable;
     }
 
     private void applyGlow(boolean live) {
         if (glow == null) return;
-        if (!live) {
-            if (glowAnimator != null) glowAnimator.cancel();
-            glow.setBackground(null);
-            glow.setAlpha(1f);
-            return;
-        }
-        GradientDrawable stroke = new GradientDrawable();
-        stroke.setCornerRadius(dp(20));
-        stroke.setStroke(dp(2), color(R.color.primary));
-        stroke.setColor(Color.TRANSPARENT);
-        glow.setBackground(stroke);
-        boolean animate = !ScreenSnapshot.freezeMotion && motionScale() > 0f;
-        if (!animate) {
-            if (glowAnimator != null) glowAnimator.cancel();
-            glow.setAlpha(1f);
-            return;
-        }
-        if (glowAnimator != null && glowAnimator.isStarted()) return;
-        glowAnimator = ObjectAnimator.ofFloat(glow, View.ALPHA, 0.55f, 0.95f);
-        glowAnimator.setDuration(1600);
-        glowAnimator.setRepeatMode(ValueAnimator.REVERSE);
-        glowAnimator.setRepeatCount(ValueAnimator.INFINITE);
-        glowAnimator.start();
+        glow.live = live;
+        glow.setVisibility(live ? View.VISIBLE : View.GONE);
+        glow.invalidate();
     }
 
-    private float motionScale() {
-        try {
-            return Settings.Global.getFloat(activity.getContentResolver(),
-                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
-        } catch (Throwable failure) {
-            return 1f;
-        }
+    private static String deviceCaption(String resolution) {
+        String model = android.os.Build.MODEL == null ? "" : android.os.Build.MODEL.trim();
+        if (model.length() == 0 || "unknown".equalsIgnoreCase(model)) return resolution;
+        return model + " · " + resolution;
     }
 
     private View switchRow(String icon, int ink, int well, String title, String cap, boolean on,
@@ -812,7 +844,9 @@ final class V22Ui {
 
     private View valueRow(String icon, int ink, int well, String title, String cap, String value,
                           View.OnClickListener click) {
-        TextView valueView = text(value + " ›", 14, color(R.color.on_surface_variant), false);
+        TextView valueView = text(value, 14, color(R.color.on_surface_variant), false);
+        valueView.setCompoundDrawables(null, null,
+                Glyph.drawable(activity, "chev", 18, color(R.color.on_surface_variant), 2f), null);
         if ("aspect".equals(icon)) streamResValue = valueView;
         LinearLayout row = (LinearLayout) labeledRow(icon, ink, well, title, caption(cap), valueView);
         row.setOnClickListener(click);
@@ -824,9 +858,7 @@ final class V22Ui {
         row.setMinimumHeight(dp(64));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(8), dp(16), dp(8));
-        TextView badge = text("●", 14, color(ink), true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setBackground(round(color(well), 20));
+        View badge = Glyph.well(activity, icon, color(well), color(ink));
         row.addView(badge, new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout text = column();
         text.setPadding(dp(14), 0, dp(8), 0);
@@ -850,21 +882,17 @@ final class V22Ui {
         return box;
     }
 
-    private void pill(TextView view, String label, int background, boolean breath) {
-        view.setText((breath ? "● " : "● ") + label);
-        view.setTextColor(Color.WHITE);
-        GradientDrawable shape = new GradientDrawable();
-        shape.setCornerRadius(dp(15));
-        shape.setColor(color(background));
-        view.setBackground(shape);
-        view.setVisibility(View.VISIBLE);
+    private void pill(Motion.StatusPill view, String label, int background, boolean breath) {
+        int dot = label.startsWith("录制") ? Motion.RED
+                : label.startsWith("推流已暂停") ? color(R.color.amber)
+                : label.startsWith("推流") ? color(R.color.secondary)
+                : color(R.color.on_surface_variant);
+        view.show(label, color(background), dot, breath);
     }
 
-    private TextView pillView() {
-        TextView view = text("", 13, Color.WHITE, true);
-        view.setGravity(Gravity.CENTER_VERTICAL);
-        view.setPadding(dp(8), 0, dp(10), 0);
-        view.setMinHeight(dp(30));
+    private Motion.StatusPill pillView() {
+        Motion.StatusPill view = new Motion.StatusPill(activity);
+        view.setMinimumHeight(dp(30));
         return view;
     }
 
@@ -882,10 +910,19 @@ final class V22Ui {
     }
 
     private TextView segmentButton(String label, boolean on, View.OnClickListener click) {
+        return segmentButton(null, label, on, click);
+    }
+
+    private TextView segmentButton(String icon, String label, boolean on, View.OnClickListener click) {
         TextView button = text(label, 14, color(on ? R.color.on_surface : R.color.on_surface_variant), on);
         button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(34));
         button.setBackground(on ? round(color(R.color.surface), 11) : null);
+        if (icon != null) {
+            button.setCompoundDrawables(Glyph.drawable(activity, icon, 16,
+                    color(on ? R.color.on_surface : R.color.on_surface_variant), 2f), null, null, null);
+            button.setCompoundDrawablePadding(dp(4));
+        }
         button.setOnClickListener(click);
         return button;
     }
@@ -904,12 +941,14 @@ final class V22Ui {
     private ScrollView scroll() {
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
+        scroll.setClipChildren(false);
         scroll.setBackgroundColor(color(R.color.background));
         return scroll;
     }
 
     private LinearLayout page() {
         LinearLayout page = column();
+        page.setClipChildren(false);
         page.setPadding(dp(16), dp(8), dp(16), dp(24));
         return page;
     }

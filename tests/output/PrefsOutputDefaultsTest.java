@@ -33,6 +33,12 @@ public final class PrefsOutputDefaultsTest {
                 || recording.withAudio || recording.segmentSeconds != 300)
             throw new AssertionError("upgrade must opt in to recording/microphone; default segments are five minutes");
         memory.values.put(Prefs.KEY_MICROPHONE, true);
+        if (Prefs.soundSelected() || Prefs.soundEnabled())
+            throw new AssertionError("a mic-on upgrade that never saved sound_detection stays off");
+        memory.values.put(Prefs.KEY_SOUND, true);
+        if (!Prefs.soundSelected() || !Prefs.soundEnabled())
+            throw new AssertionError("a saved sound trigger still turns on with the microphone");
+        memory.values.remove(Prefs.KEY_SOUND);
         memory.values.put(Prefs.KEY_RECORD_AUDIO, false);
         if (Prefs.recordingOptions().withAudio)
             throw new AssertionError("RTSP microphone may stay on while recorded audio is disabled");

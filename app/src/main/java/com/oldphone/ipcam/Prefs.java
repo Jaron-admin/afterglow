@@ -320,7 +320,8 @@ public final class Prefs {
     }
     public static boolean microphoneEnabled() { return getBool(KEY_MICROPHONE, false); }
     public static boolean motionEnabled() { return getBool(KEY_MOTION, true); }
-    public static boolean soundSelected() { return getBool(KEY_SOUND, true); }
+    /** Missing key stays off. That was the default before v2.2, including mic-on upgrades. */
+    public static boolean soundSelected() { return getBool(KEY_SOUND, false); }
     public static boolean soundEnabled() {
         return microphoneEnabled() && soundSelected();
     }

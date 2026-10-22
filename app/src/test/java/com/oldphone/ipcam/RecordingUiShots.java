@@ -3,6 +3,7 @@ package com.oldphone.ipcam;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.view.View;
 import android.view.ViewGroup;
@@ -65,7 +66,7 @@ public class RecordingUiShots {
             check(contains(root(plain.activity), "开始录制"), "settings are missing 开始录制");
             check(contains(root(plain.activity), "满足任一"), "settings are missing 满足任一");
             check(contains(root(plain.activity), "画面变动"), "settings are missing motion");
-            scrollContentOf(plain.activity, file(theme, "settings"));
+            shot(plain.activity, theme, "settings", true);
         } finally { plain.close(); }
 
         prepare();
@@ -78,7 +79,7 @@ public class RecordingUiShots {
             settle(6);
             check(contains(root(lightPage.activity), "光感控制录制"), "light panel is missing");
             check(contains(root(lightPage.activity), "画面亮度"), "frame method is missing");
-            scrollContentOf(lightPage.activity, file(theme, "settings-light"));
+            shot(lightPage.activity, theme, "settings-light", true);
         } finally { lightPage.close(); }
 
         prepare();
@@ -92,7 +93,7 @@ public class RecordingUiShots {
             check(contains(root(recordingPage.activity), "停止录制"), "recording card is not active");
             check(contains(root(recordingPage.activity), "全部满足"), "match-all is missing");
             check(contains(root(recordingPage.activity), "光线传感器"), "sensor method is missing");
-            scrollContentOf(recordingPage.activity, file(theme, "settings-recording"));
+            shot(recordingPage.activity, theme, "settings-recording", true);
         } finally { recordingPage.close(); }
 
         prepare();
@@ -107,7 +108,7 @@ public class RecordingUiShots {
             settle(6);
             check(contains(root(advancedPage.activity), "存储空间"), "advanced storage is missing");
             check(contains(root(advancedPage.activity), "自动清理"), "advanced cleanup is missing");
-            scrollContentOf(advancedPage.activity, file(theme, "settings-advanced"));
+            shot(advancedPage.activity, theme, "settings-advanced", true);
         } finally { advancedPage.close(); }
 
         prepare();
@@ -115,7 +116,7 @@ public class RecordingUiShots {
         ActivityControllerHold<RecordingsActivity> empty = launch(RecordingsActivity.class);
         try {
             waitUntil(root(empty.activity), "还没有录像", 40);
-            window(empty.activity, file(theme, "list-empty"));
+            shot(empty.activity, theme, "list-empty", false);
         } finally { empty.close(); }
 
         prepare();
@@ -125,7 +126,7 @@ public class RecordingUiShots {
             waitUntil(root(list.activity), "今天", 40);
             waitUntil(root(list.activity), "画面变动", 20);
             waitUntil(root(list.activity), "光感触发", 20);
-            window(list.activity, file(theme, "list"));
+            shot(list.activity, theme, "list", true);
             ListView rows = (ListView) list.activity.findViewById(R.id.recordingList);
             check(rows.getOnItemLongClickListener() != null, "recordings list has no long-press");
             int clip = firstClip(rows);
@@ -133,7 +134,7 @@ public class RecordingUiShots {
             settle(4);
             check(contains(root(list.activity), "已选择 1"), "multi-select did not open");
             check(contains(root(list.activity), "导出"), "multi-select is missing export");
-            window(list.activity, file(theme, "list-select"));
+            shot(list.activity, theme, "list-select", false);
         } finally { list.close(); }
 
         prepare();
@@ -149,7 +150,7 @@ public class RecordingUiShots {
             check(contains(root(streamPage.activity), "推流分辨率"), "stream page is missing resolution");
             check(contains(root(streamPage.activity), "两路同时推"), "stream page is missing both addresses");
             check(contains(root(streamPage.activity), "推送音频到 HA"), "HA audio row is missing");
-            scrollContentOf(streamPage.activity, file(theme, "stream"));
+            shot(streamPage.activity, theme, "stream", true);
         } finally { streamPage.close(); }
 
         prepare();
@@ -167,7 +168,7 @@ public class RecordingUiShots {
             settle(6);
             check(contains(root(pushPage.activity), "光感控制推流"), "stream light switch is missing");
             check(contains(root(pushPage.activity), "去录制设置调整"), "light summary link is missing");
-            scrollContentOf(pushPage.activity, file(theme, "stream-push"));
+            shot(pushPage.activity, theme, "stream-push", true);
         } finally { pushPage.close(); }
     }
 
@@ -203,7 +204,7 @@ public class RecordingUiShots {
             check(contains(root(page.activity), "录制声音"), name + " is missing 录制声音");
             if ("home-res".equals(name)) check(contains(root(page.activity), "推流分辨率"), "resolution menu is closed");
             if (paused) check(contains(root(page.activity), "亮度不足"), "paused state is missing");
-            scrollContentOf(page.activity, file(theme, name));
+            shot(page.activity, theme, name, "home-streaming".equals(name));
         } finally { page.close(); }
     }
 
@@ -213,7 +214,14 @@ public class RecordingUiShots {
         ScreenSnapshot.totalClips = 9;
         ScreenSnapshot.clock = "2026-10-22 10:06:21";
         ScreenSnapshot.freezeMotion = true;
+        ScreenSnapshot.composeChrome = true;
         ScreenSnapshot.brightness = 42;
+        if (ScreenSnapshot.preview == null) {
+            java.io.InputStream input = RecordingUiShots.class.getResourceAsStream("/preview-living.png");
+            check(input != null, "preview placeholder is missing");
+            ScreenSnapshot.preview = BitmapFactory.decodeStream(input);
+            check(ScreenSnapshot.preview != null, "preview placeholder did not decode");
+        }
     }
 
     private static void prepare() {
@@ -398,6 +406,62 @@ public class RecordingUiShots {
         return false;
     }
 
+    private static void shot(Activity activity, String theme, String name, boolean full) {
+        viewport(activity, file(theme, name));
+        if (full) {
+            if (activity instanceof RecordingsActivity) listFull((RecordingsActivity) activity, file(theme, name + "-full"));
+            else scrollContentOf(activity, file(theme, name + "-full"));
+        }
+    }
+
+    private static void viewport(Activity activity, File file) {
+        View decor = activity.getWindow().getDecorView();
+        float density = activity.getResources().getDisplayMetrics().density;
+        int widthDp = Math.round(decor.getWidth() / density);
+        int heightDp = Math.round(decor.getHeight() / density);
+        check(widthDp == 360 && heightDp == 800, file.getName() + " viewport is " + widthDp + "x" + heightDp);
+        draw(decor, decor.getWidth(), decor.getHeight(), file);
+    }
+
+    private static void listFull(RecordingsActivity activity, File file) {
+        ListView rows = (ListView) activity.findViewById(R.id.recordingList);
+        View decor = activity.getWindow().getDecorView();
+        int[] origin = new int[2];
+        rows.getLocationInWindow(origin);
+        int headerHeight = Math.max(0, origin[1]);
+        int width = decor.getWidth();
+        int rowWidth = rows.getWidth() > 0 ? rows.getWidth() : width;
+        int body = 0;
+        java.util.ArrayList<View> drawn = new java.util.ArrayList<View>();
+        java.util.ArrayList<Integer> heights = new java.util.ArrayList<Integer>();
+        for (int i = 0; i < rows.getAdapter().getCount(); i++) {
+            View row = rows.getAdapter().getView(i, null, rows);
+            row.measure(View.MeasureSpec.makeMeasureSpec(rowWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int height = Math.max(1, row.getMeasuredHeight());
+            row.layout(0, 0, rowWidth, height);
+            drawn.add(row);
+            heights.add(height);
+            body += height;
+        }
+        int height = Math.max(decor.getHeight(), headerHeight + body);
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.save();
+        canvas.clipRect(0, 0, width, headerHeight);
+        decor.draw(canvas);
+        canvas.restore();
+        int top = headerHeight;
+        for (int i = 0; i < drawn.size(); i++) {
+            canvas.save();
+            canvas.translate(origin[0], top);
+            drawn.get(i).draw(canvas);
+            canvas.restore();
+            top += heights.get(i);
+        }
+        write(bitmap, file);
+    }
+
     private static void window(Activity activity, File file) {
         View decor = activity.getWindow().getDecorView();
         draw(decor, decor.getWidth(), decor.getHeight(), file);
@@ -407,13 +471,29 @@ public class RecordingUiShots {
         ScrollView scroll = findScroll(root(activity));
         check(scroll != null, "screen has no scroll view");
         View target = scroll.getChildAt(0);
+        View decor = activity.getWindow().getDecorView();
+        int[] origin = new int[2];
+        scroll.getLocationInWindow(origin);
         int width = scroll.getWidth();
-        if (width <= 0) width = activity.getWindow().getDecorView().getWidth();
+        if (width <= 0) width = decor.getWidth();
         target.measure(
                 View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        target.layout(0, 0, target.getMeasuredWidth(), target.getMeasuredHeight());
-        draw(target, target.getMeasuredWidth(), target.getMeasuredHeight(), file);
+        int measuredWidth = target.getMeasuredWidth();
+        int measuredHeight = target.getMeasuredHeight();
+        target.layout(0, 0, measuredWidth, measuredHeight);
+        int header = Math.max(0, origin[1]);
+        Bitmap bitmap = Bitmap.createBitmap(decor.getWidth(), header + measuredHeight, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.save();
+        canvas.clipRect(0, 0, decor.getWidth(), header);
+        decor.draw(canvas);
+        canvas.restore();
+        canvas.save();
+        canvas.translate(origin[0], header);
+        target.draw(canvas);
+        canvas.restore();
+        write(bitmap, file);
     }
 
     private static ScrollView findScroll(View view) {
@@ -467,6 +547,13 @@ public class RecordingUiShots {
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         view.draw(canvas);
+        if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs()) {
+            throw new AssertionError("could not create " + file.getParent());
+        }
+        write(bitmap, file);
+    }
+
+    private static void write(Bitmap bitmap, File file) {
         if (!file.getParentFile().isDirectory() && !file.getParentFile().mkdirs()) {
             throw new AssertionError("could not create " + file.getParent());
         }

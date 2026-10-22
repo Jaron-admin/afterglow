@@ -281,7 +281,9 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         Prefs.init(this);
         applyRequestedOrientation();
+        ShotChrome.beforeContent(this);
         setContentView(R.layout.activity_main);
+        ShotChrome.afterContent(this);
         bindViews();
         setupSpinners();
         setupListeners();
