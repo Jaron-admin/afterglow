@@ -100,6 +100,7 @@ public final class MainActivity extends Activity {
     private boolean streamPage;
     private int summaryGeneration;
     private long summaryAt;
+    private boolean summaryReady;
     private boolean startAfterPermission;
 
     private View rowRtsp;
@@ -280,6 +281,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Prefs.init(this);
+        NetUtils.warmAddresses();
         applyRequestedOrientation();
         ShotChrome.beforeContent(this);
         setContentView(R.layout.activity_main);
@@ -308,6 +310,14 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (v22 != null && v22.showingAdvanced()) {
+            v22.showAdvanced(false);
+            return;
+        }
+        if (v22 != null && v22.showingStream()) {
+            showStreamPage(false);
+            return;
+        }
         if (streamPage) {
             showStreamPage(false);
             return;
@@ -529,6 +539,39 @@ public final class MainActivity extends Activity {
         if (content.getChildCount() > 0) content.getChildAt(0).setVisibility(View.GONE);
         v22 = new V22Ui(this);
         v22.attach(content);
+        adoptLegacyAdvanced();
+    }
+
+    /**
+     * The old layout stays inflated because its controls keep their listeners, but it is
+     * never shown. The panels the v2.2 screens never rebuilt are moved into the new
+     * 高级设置 page so RTSP credentials, keep-alive, calibration, aspect ratio, custom
+     * sizes and LAN discovery stay reachable instead of disappearing with the layout.
+     */
+    private void adoptLegacyAdvanced() {
+        if (v22 == null) return;
+        View panel = findViewById(R.id.settingsPanel);
+        if (panel != null) {
+            // The legacy back button belongs to the old page switcher.
+            View legacyBack = panel.findViewById(R.id.btnStreamBack);
+            if (legacyBack != null) legacyBack.setVisibility(View.GONE);
+            // The panel is `gone` in the old layout because the legacy page switcher
+            // toggled it; the advanced page owns it now.
+            panel.setVisibility(View.VISIBLE);
+            v22.hostAdvanced(panel);
+        }
+        View calibrate = findViewById(R.id.btnCalibrate);
+        if (calibrate != null) {
+            calibrate.setVisibility(View.VISIBLE);
+            v22.hostAdvanced(calibrate);
+        }
+    }
+
+    /** Re-reads everything the moved legacy panel displays. */
+    void v22RefreshAdvanced() {
+        refreshAddresses();
+        updateGeometryLabel();
+        refreshHomeSummaries();
     }
 
     private void addRecordingControls() {
@@ -595,8 +638,8 @@ public final class MainActivity extends Activity {
 
     private void showStreamPage(boolean show) {
         streamPage = show;
-        if (previewPanel != null) previewPanel.setVisibility(View.GONE);
-        if (settingsPanel != null) settingsPanel.setVisibility(View.GONE);
+        // The legacy panels live inside the hidden root and are never shown again; the
+        // settings panel has been adopted by the v2.2 高级设置 page.
         if (v22 != null) v22.showStream(show);
     }
 
@@ -1550,8 +1593,33 @@ public final class MainActivity extends Activity {
 
     private void refreshUi() {
         boolean running = CameraStreamService.running;
-
         boolean switching = CameraStreamService.reconfiguring;
+
+        if (v22 == null) {
+            refreshLegacyChrome(running, switching);
+            refreshPreview(running);
+        } else {
+            v22.refresh();
+        }
+        refreshHomeSummaries();
+        CameraCatalog.Entry active = CameraStreamService.activeCamera;
+        if (active != lastActiveCamera) {
+            lastActiveCamera = active;
+            mergeActiveCamera();
+            normalizeLegacyCameraKey();
+            refreshCameraOptions();
+            refreshResolutionOptions();
+        }
+        updateGeometryLabel();
+        refreshAddresses();
+    }
+
+    /**
+     * The hidden legacy header and preview panel. Kept for the screenshot harness, which
+     * still composes the pre-v2.2 screen; running it while the v2.2 screens are up only
+     * re-inflates drawables and re-lays-out views nobody can see.
+     */
+    private void refreshLegacyChrome(boolean running, boolean switching) {
         tvStatus.setText(switching ? R.string.status_switching
                 : (running ? R.string.status_running : R.string.status_stopped));
         tvStatus.setBackgroundResource(running
@@ -1599,35 +1667,24 @@ public final class MainActivity extends Activity {
         String event = CameraStreamService.lastEvent;
         tvLastEvent.setVisibility(event == null || event.length() == 0 ? View.GONE : View.VISIBLE);
         tvLastEvent.setText(event == null ? "" : "最近事件：" + event);
-        refreshHomeSummaries();
-        if (v22 != null) v22.refresh();
-        refreshPreview(running);
-        CameraCatalog.Entry active = CameraStreamService.activeCamera;
-        if (active != lastActiveCamera) {
-            lastActiveCamera = active;
-            mergeActiveCamera();
-            normalizeLegacyCameraKey();
-            refreshCameraOptions();
-            refreshResolutionOptions();
-        }
-        updateGeometryLabel();
-        refreshAddresses();
     }
 
     private void refreshHomeSummaries() {
-        if (tvSettingsSummary != null) {
-            tvSettingsSummary.setText(HomeEntrySummaries.recording(
-                    Prefs.recordingMode(), Prefs.motionEnabled(), Prefs.soundEnabled()));
-        }
-        if (tvStreamSummary != null) {
-            int mode = Prefs.mode();
-            String label = mode >= 0 && mode < Prefs.MODE_LABELS.length ? Prefs.MODE_LABELS[mode] : "";
-            tvStreamSummary.setText(HomeEntrySummaries.stream(
-                    Prefs.outputWidth(), Prefs.outputHeight(), label));
+        if (v22 == null) {
+            if (tvSettingsSummary != null) {
+                tvSettingsSummary.setText(HomeEntrySummaries.recording(
+                        Prefs.recordingMode(), Prefs.motionEnabled(), Prefs.soundEnabled()));
+            }
+            if (tvStreamSummary != null) {
+                int mode = Prefs.mode();
+                String label = mode >= 0 && mode < Prefs.MODE_LABELS.length ? Prefs.MODE_LABELS[mode] : "";
+                tvStreamSummary.setText(HomeEntrySummaries.stream(
+                        Prefs.outputWidth(), Prefs.outputHeight(), label));
+            }
         }
         if (tvLibrarySummary == null) return;
         long now = System.currentTimeMillis();
-        if (now - summaryAt < 3000 && tvLibrarySummary.getText().length() > 0) return;
+        if (now - summaryAt < 3000 && summaryReady) return;
         summaryAt = now;
         final int token = ++summaryGeneration;
         final String target = Prefs.recordingTarget();
@@ -1654,7 +1711,9 @@ public final class MainActivity extends Activity {
                         @Override public void run() {
                             v22Today = shownToday;
                             v22Total = shownTotal;
-                            if (v22 != null) v22.refresh();
+                            summaryReady = true;
+                            // The 1s refresher already redraws the entry cards; nudging
+                            // the whole screen from here doubled the work per second.
                         }
                     });
                 } catch (Exception failure) {
@@ -1663,8 +1722,10 @@ public final class MainActivity extends Activity {
                 final String shown = text;
                 handler.post(new Runnable() {
                     @Override public void run() {
-                        if (token == summaryGeneration && tvLibrarySummary != null)
+                        if (token == summaryGeneration && tvLibrarySummary != null
+                                && v22 == null) {
                             tvLibrarySummary.setText(shown);
+                        }
                     }
                 });
             }

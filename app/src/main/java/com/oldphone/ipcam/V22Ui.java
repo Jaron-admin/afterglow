@@ -44,17 +44,25 @@ import java.util.Locale;
 
 /** v2.2 screens. Layout numbers follow the design handoff. */
 final class V22Ui {
+    private static final SimpleDateFormat CLOCK =
+            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+
     final MainActivity activity;
     private View home;
     private View stream;
+    private View advanced;
+    private LinearLayout advancedHost;
+    private boolean advancedShowing;
+    private boolean paintedFront;
+    private int paintedRotation = -1;
     private ScrollView streamScroll;
     private ScrollView homeScroll;
     private FrameLayout previewFrame;
     private int streamPushTop;
     private boolean resMenu;
     private boolean wantStream;
-    private ImageView previewImage;
-    private ImageView miniImage;
+    private PreviewPane previewImage;
+    private PreviewPane miniImage;
     private View previewScene;
     private View miniScene;
     private TextView deviceLine;
@@ -121,17 +129,23 @@ final class V22Ui {
                 || (activity.getIntent() != null && activity.getIntent().getBooleanExtra(MainActivity.EXTRA_STREAM_PAGE, false));
         home = buildHome();
         stream = buildStream();
+        advanced = buildAdvanced();
         content.setClipChildren(false);
         content.setClipToPadding(false);
         content.addView(home, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         content.addView(stream, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        content.addView(advanced, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        advanced.setVisibility(View.GONE);
         showStream(wantStream);
     }
 
     void showStream(boolean show) {
         wantStream = show;
+        advancedShowing = false;
+        if (advanced != null) advanced.setVisibility(View.GONE);
         if (home != null) home.setVisibility(show ? View.GONE : View.VISIBLE);
         if (stream != null) stream.setVisibility(show ? View.VISIBLE : View.GONE);
     }
@@ -141,12 +155,12 @@ final class V22Ui {
     void setPreview(Bitmap bitmap) {
         if (bitmap == null) return;
         if (previewImage != null) {
-            previewImage.setImageBitmap(bitmap);
+            previewImage.setFrame(bitmap);
             previewImage.setVisibility(View.VISIBLE);
             if (previewScene != null) previewScene.setVisibility(View.GONE);
         }
         if (miniImage != null) {
-            miniImage.setImageBitmap(bitmap);
+            miniImage.setFrame(bitmap);
             miniImage.setVisibility(View.VISIBLE);
             if (miniScene != null) miniScene.setVisibility(View.GONE);
         }
@@ -154,6 +168,7 @@ final class V22Ui {
 
     void refresh() {
         if (home == null) return;
+        if (advancedShowing) return;
         boolean running = CameraStreamService.running;
         boolean streaming = StreamControls.streaming();
         int brightness = shownBrightness();
@@ -162,10 +177,10 @@ final class V22Ui {
         boolean recording = CameraStreamService.recordingNow;
         boolean front = frontLens();
         String res = StreamPresets.label(Prefs.outputWidth(), Prefs.outputHeight());
-        deviceLine.setText(deviceCaption(res));
+        setTextIfChanged(deviceLine, deviceCaption(res));
         if (ScreenSnapshot.preview != null) setPreview(ScreenSnapshot.preview);
-        previewClock.setText(ScreenSnapshot.clock != null ? ScreenSnapshot.clock
-                : new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
+        setTextIfChanged(previewClock, ScreenSnapshot.clock != null ? ScreenSnapshot.clock
+                : CLOCK.format(new Date()));
         previewClock.setVisibility(Prefs.watermarkEnabled() ? View.VISIBLE : View.GONE);
         float mirror = front ? -1f : 1f;
         if (previewImage != null) previewImage.setScaleX(mirror);
@@ -269,9 +284,24 @@ final class V22Ui {
         if (haBody != null) haBody.setAlpha(Prefs.haEnabled() ? 1f : 0.45f);
         paintLightSummary(brightness);
         if (lightSummaryBox != null) lightSummaryBox.setAlpha(Prefs.streamLightEnabled() ? 1f : 0.5f);
-        if (entityId != null) entityId.setText("camera.afterglow_" + safeId());
-        paintSegments(home);
-        paintSegments(stream);
+        if (entityId != null) setTextIfChanged(entityId, "camera.afterglow_" + safeId());
+        // The lens and rotation segments only change when the preference does; walking
+        // both full view trees every second was pure overhead.
+        int rotation = Prefs.manualRotationDegrees();
+        if (front != paintedFront || rotation != paintedRotation) {
+            paintedFront = front;
+            paintedRotation = rotation;
+            paintSegments(home);
+            paintSegments(stream);
+        }
+    }
+
+    /** Assigns only on change so a steady screen does not request layout every second. */
+    private static void setTextIfChanged(TextView view, String value) {
+        if (view == null) return;
+        CharSequence current = view.getText();
+        if (current != null && current.toString().equals(value)) return;
+        view.setText(value);
     }
 
     private void paintSegments(View view) {
@@ -327,6 +357,7 @@ final class V22Ui {
         page.addView(gap(soundCard(), 0, 12, 0, 0));
         page.addView(section("功能"));
         page.addView(entries());
+        page.addView(gap(advancedEntry(), 0, 12, 0, 0));
         FrameLayout overlay = new FrameLayout(activity);
         overlay.setClipChildren(false);
         overlay.setClipToPadding(false);
@@ -508,8 +539,7 @@ final class V22Ui {
         frame.addView(clip, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         RoomScene scene = new RoomScene(activity);
-        ImageView image = new ImageView(activity);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        PreviewPane image = new PreviewPane(activity);
         image.setVisibility(View.GONE);
         FrameLayout.LayoutParams fill = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -755,6 +785,56 @@ final class V22Ui {
         }), statLp());
         return row;
     }
+
+    /**
+     * The screens that only the legacy panel still owns: RTSP credentials, keep-alive,
+     * calibration, aspect ratio, custom sizes and LAN discovery. Hiding the old layout
+     * without a replacement dropped every one of them, so the panel itself is moved into
+     * this page instead of being rebuilt.
+     */
+    private View advancedEntry() {
+        LinearLayout card = card();
+        card.addView(valueRow("tune", R.color.ink_amber, R.color.tonal_amber, "高级设置",
+                "认证、保活、校准、画幅、自定义尺寸与设备发现", "",
+                new View.OnClickListener() {
+                    @Override public void onClick(View v) { showAdvanced(true); }
+                }));
+        return card;
+    }
+
+    private View buildAdvanced() {
+        ScrollView scroll = scroll();
+        LinearLayout page = page();
+        scroll.addView(page);
+        page.addView(topBar("高级设置", "认证、保活、校准、画幅与设备发现", new Runnable() {
+            @Override public void run() { showAdvanced(false); }
+        }));
+        advancedHost = column();
+        page.addView(advancedHost);
+        return scroll;
+    }
+
+    /** Adopts the legacy settings panel, which keeps every listener bound in MainActivity. */
+    void hostAdvanced(View panel) {
+        if (advancedHost == null || panel == null || panel.getParent() == advancedHost) return;
+        if (panel.getParent() instanceof ViewGroup) {
+            ((ViewGroup) panel.getParent()).removeView(panel);
+        }
+        advancedHost.addView(panel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    void showAdvanced(boolean show) {
+        if (advanced == null) return;
+        advancedShowing = show;
+        advanced.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (home != null) home.setVisibility(show || wantStream ? View.GONE : View.VISIBLE);
+        if (stream != null) stream.setVisibility(show ? View.GONE : (wantStream ? View.VISIBLE : View.GONE));
+        if (show) activity.v22RefreshAdvanced();
+        else refresh();
+    }
+
+    boolean showingAdvanced() { return advancedShowing; }
 
     private View entry(String icon, String title, TextView summary, int well, int ink, View.OnClickListener click) {
         LinearLayout card = card();
@@ -1019,9 +1099,22 @@ final class V22Ui {
     }
 
     private void cycleResolution() {
-        int index = StreamPresets.indexOf(Prefs.outputWidth(), Prefs.outputHeight());
-        int next = (index + 1) % StreamPresets.SIZES.length;
-        if (index < 0) next = 1;
+        int width = Prefs.outputWidth();
+        int height = Prefs.outputHeight();
+        int index = StreamPresets.indexOf(width, height);
+        int next;
+        if (index >= 0) {
+            next = (index + 1) % StreamPresets.SIZES.length;
+        } else {
+            // A custom size (set in 高级设置) is not a preset. Step to the next larger
+            // preset instead of jumping to a fixed one, so the control never moves
+            // backwards and the stored value is only replaced by an explicit tap.
+            long pixels = (long) width * height;
+            next = 0;
+            for (int i = StreamPresets.SIZES.length - 1; i >= 0; i--) {
+                if ((long) StreamPresets.SIZES[i][0] * StreamPresets.SIZES[i][1] > pixels) next = i;
+            }
+        }
         activity.v22SetResolution(StreamPresets.SIZES[next][0], StreamPresets.SIZES[next][1]);
     }
 
@@ -1064,16 +1157,22 @@ final class V22Ui {
     }
 
     private View topBar(String title, String subtitle, boolean back) {
+        return topBar(title, subtitle, back ? new Runnable() {
+            @Override public void run() {
+                showStream(false);
+                refresh();
+            }
+        } : null);
+    }
+
+    private View topBar(String title, String subtitle, final Runnable onBack) {
         LinearLayout block = column();
-        if (back) {
+        if (onBack != null) {
             ImageView button = new ImageView(activity);
             button.setImageDrawable(Glyph.drawable(activity, "back", 24, color(R.color.on_surface), 2f));
             button.setScaleType(ImageView.ScaleType.CENTER);
             button.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    showStream(false);
-                    refresh();
-                }
+                @Override public void onClick(View v) { onBack.run(); }
             });
             block.addView(button, new LinearLayout.LayoutParams(dp(44), dp(44)));
         }
