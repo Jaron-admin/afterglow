@@ -7,6 +7,10 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.os.Environment;
 import android.os.StatFs;
 import android.util.TypedValue;
@@ -66,19 +70,34 @@ public final class RecordingSettingsActivity extends Activity {
         rebuild();
         if (Prefs.recordLightEnabled() && ("settings-light".equals(shot)
                 || (getIntent() != null && getIntent().getBooleanExtra(EXTRA_OPEN_LIGHT, false)))) {
-            scroll.post(new Runnable() {
-                @Override public void run() {
-                    if (lightAnchor != null) scroll.scrollTo(0, Math.max(0, lightAnchor.getTop() - dp(150)));
-                }
-            });
+            scrollWhenReady(true, dp(150));
         }
-        if ("settings-advanced".equals(shot)) {
-            scroll.post(new Runnable() {
-                @Override public void run() {
-                    if (advancedAnchor != null) scroll.scrollTo(0, Math.max(0, advancedAnchor.getTop() - dp(230)));
-                }
-            });
+        if ("settings-advanced".equals(shot)) scrollWhenReady(false, dp(230));
+    }
+
+    private void scrollWhenReady(final boolean light, final int above) {
+        scroll.getViewTreeObserver().addOnGlobalLayoutListener(
+                new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override public void onGlobalLayout() {
+                        View anchor = light ? lightAnchor : advancedAnchor;
+                        if (anchor == null) return;
+                        int top = offsetIn(page, anchor);
+                        if (top <= 0) return;
+                        scroll.scrollTo(0, Math.max(0, top - above));
+                        scroll.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                    }
+                });
+    }
+
+    private static int offsetIn(View ancestor, View child) {
+        int y = 0;
+        View view = child;
+        while (view != null && view != ancestor) {
+            y += view.getTop();
+            if (!(view.getParent() instanceof View)) break;
+            view = (View) view.getParent();
         }
+        return y;
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -135,13 +154,17 @@ public final class RecordingSettingsActivity extends Activity {
         card.addView(statusRow);
         TextView button = text(recording ? "停止录制" : "开始录制", 17,
                 recording ? Color.WHITE : color(R.color.ink_red), true);
-        button.setGravity(Gravity.CENTER);
-        button.setMinimumHeight(dp(52));
         Motion.Mark mark = new Motion.Mark(this);
         mark.square = recording;
         mark.color = recording ? Color.WHITE : color(R.color.ink_red);
-        button.setCompoundDrawables(markDrawable(mark), null, null, null);
-        button.setCompoundDrawablePadding(dp(8));
+        LinearLayout group = row();
+        group.setGravity(Gravity.CENTER);
+        group.addView(mark, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        button.setPadding(dp(8), 0, 0, 0);
+        group.addView(button);
+        FrameLayout face = new FrameLayout(this);
+        face.addView(group, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(26));
         if (recording) {
@@ -152,12 +175,12 @@ public final class RecordingSettingsActivity extends Activity {
             shape.setColor(color(R.color.tonal_red));
             button.setTextColor(color(R.color.ink_red));
         }
-        button.setBackground(shape);
-        int extra = dp(28);
+        face.setBackground(shape);
+        int extra = dp(42);
         Motion.Halo halo = new Motion.Halo(this);
         halo.inset = extra;
         halo.mode = recording && !Motion.reduced(this) ? Motion.Halo.RED : Motion.Halo.NONE;
-        button.setOnClickListener(new View.OnClickListener() {
+        face.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 boolean start = !CameraStreamService.recordingNow;
                 if (start && triggerCount() == 0 && Prefs.recordingMode() != 1) {
@@ -184,7 +207,7 @@ public final class RecordingSettingsActivity extends Activity {
         FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
         buttonLp.setMargins(extra, extra, extra, extra);
-        wrap.addView(button, buttonLp);
+        wrap.addView(face, buttonLp);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(52) + extra * 2);
         lp.topMargin = dp(14) - extra;
@@ -214,7 +237,7 @@ public final class RecordingSettingsActivity extends Activity {
         LinearLayout card = card();
         card.addView(settingHead("motion", R.color.ink_orange, R.color.tonal_orange,
                 "触发方式", "可多选，并选择组合方式", null));
-        LinearLayout chips = row();
+        FlowRow chips = new FlowRow(this, dp(6), dp(8));
         chips.setPadding(dp(16), 0, dp(16), 0);
         chips.addView(trigger("画面变动", Prefs.motionEnabled(), R.color.tonal_orange, R.color.ink_orange, new View.OnClickListener() {
             @Override public void onClick(View v) { toggle(Prefs.KEY_MOTION, !Prefs.motionEnabled()); }
@@ -292,9 +315,35 @@ public final class RecordingSettingsActivity extends Activity {
         TriggerPolicy.Selection selection = new TriggerPolicy.Selection(
                 Prefs.motionEnabled(), Prefs.soundSelected(),
                 Prefs.getBool(Prefs.KEY_SCHEDULE, false), Prefs.recordLightEnabled(), Prefs.matchAll());
-        TextView line = caption(TriggerPolicy.explanation(selection));
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
         line.setPadding(dp(16), dp(8), dp(16), dp(8));
+        ImageView info = new ImageView(this);
+        info.setImageDrawable(Glyph.drawable(this, "info", 15, color(R.color.on_surface_variant), 2f));
+        line.addView(info, new LinearLayout.LayoutParams(dp(15), dp(15)));
+        TextView words = caption("");
+        words.setText(emphasis(TriggerPolicy.explanation(selection)));
+        words.setPadding(dp(6), 0, 0, 0);
+        line.addView(words, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         return line;
+    }
+
+    private CharSequence emphasis(String raw) {
+        SpannableString span = new SpannableString(raw);
+        int any = raw.indexOf("任意一个");
+        if (any >= 0) ink(span, any, any + "任意一个".length());
+        int together = raw.indexOf("个条件同时");
+        if (together > 0) {
+            int start = together;
+            while (start > 0 && (Character.isDigit(raw.charAt(start - 1)) || raw.charAt(start - 1) == ' ')) start--;
+            ink(span, start, together + "个条件同时".length());
+        }
+        return span;
+    }
+
+    private void ink(SpannableString span, int start, int end) {
+        span.setSpan(new ForegroundColorSpan(color(R.color.ink_orange)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        span.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private View lightPanel() {
@@ -330,38 +379,80 @@ public final class RecordingSettingsActivity extends Activity {
             @Override public void onClick(View v) { setMethod(LightPolicy.SENSOR); }
         }), weight());
         block.addView(seg);
-        TextView cap = caption(LightPolicy.SENSOR.equals(Prefs.lightMethod())
+        boolean sensor = LightPolicy.SENSOR.equals(Prefs.lightMethod());
+        LinearLayout methodLine = row();
+        methodLine.setGravity(Gravity.CENTER_VERTICAL);
+        methodLine.setPadding(dp(16), dp(8), dp(16), 0);
+        ImageView methodIcon = new ImageView(this);
+        methodIcon.setImageDrawable(Glyph.drawable(this, sensor ? "sun" : "camera", 15,
+                color(R.color.on_surface_variant), 2f));
+        methodLine.addView(methodIcon, new LinearLayout.LayoutParams(dp(15), dp(15)));
+        TextView cap = caption(sensor
                 ? "用手机自带感光元件。亮度不够时推流和录制都暂停，可关相机省电。"
                 : "按镜头画面计算。亮度不够时只暂停录制，推流继续，相机保持开启。");
-        cap.setPadding(dp(16), dp(8), dp(16), 0);
-        block.addView(cap);
+        cap.setPadding(dp(6), 0, 0, 0);
+        methodLine.addView(cap, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        block.addView(methodLine);
         int brightness = brightness();
         boolean met = LightPolicy.satisfied(brightness, Prefs.lightThreshold());
-        TextView read = text("当前亮度 " + (brightness < 0 ? "—" : brightness + "%")
-                + "   " + (met ? "已满足" : "未满足"), 14, color(R.color.on_surface), true);
-        read.setPadding(dp(16), dp(10), dp(16), dp(4));
+        LinearLayout read = row();
+        read.setGravity(Gravity.CENTER_VERTICAL);
+        read.setPadding(dp(16), dp(12), dp(16), dp(4));
+        ImageView sun = new ImageView(this);
+        sun.setImageDrawable(Glyph.drawable(this, "sun", 16, color(R.color.on_surface_variant), 2f));
+        read.addView(sun, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        TextView readLabel = text("当前亮度 ", 14, color(R.color.on_surface_variant), false);
+        readLabel.setPadding(dp(6), 0, 0, 0);
+        read.addView(readLabel);
+        read.addView(text(brightness < 0 ? "—" : brightness + "%", 14, color(R.color.on_surface), true));
+        read.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        TextView metChip = text(met ? "已满足" : "未满足", 12,
+                color(met ? R.color.ink_cyan : R.color.on_surface_variant), true);
+        metChip.setPadding(dp(8), dp(2), dp(8), dp(2));
+        metChip.setBackground(round(color(met ? R.color.tonal_cyan : R.color.tonal_grey), 12));
+        read.addView(metChip);
         block.addView(read);
-        SeekBar slider = new SeekBar(this);
-        slider.setMax(100);
+        BrightnessBar slider = new BrightnessBar(this);
         suppress = true;
-        slider.setProgress(Prefs.lightThreshold());
+        slider.setThreshold(Prefs.lightThreshold());
+        slider.setReading(brightness);
         suppress = false;
-        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                if (!fromUser || suppress) return;
-                Prefs.setInt(Prefs.KEY_LIGHT_THRESHOLD, progress);
+        slider.setListener(new BrightnessBar.Listener() {
+            @Override public void onChanged(int threshold) {
+                if (suppress) return;
+                Prefs.setInt(Prefs.KEY_LIGHT_THRESHOLD, threshold);
             }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {
+            @Override public void onFinished(int threshold) {
+                Prefs.setInt(Prefs.KEY_LIGHT_THRESHOLD, threshold);
                 applyIfRunning();
                 rebuild();
             }
         });
-        block.addView(slider);
-        TextView ticks = caption("暗 0%          ▮ 当前亮度          亮 100%");
+        LinearLayout.LayoutParams sliderLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sliderLp.leftMargin = dp(16);
+        sliderLp.rightMargin = dp(16);
+        block.addView(slider, sliderLp);
+        LinearLayout ticks = row();
         ticks.setPadding(dp(16), 0, dp(16), dp(4));
+        ticks.addView(caption("暗 0%"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView mark = caption("▮ 当前亮度");
+        mark.setTextColor(color(R.color.ink_cyan));
+        mark.setGravity(Gravity.CENTER);
+        ticks.addView(mark, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView bright = caption("亮 100%");
+        bright.setGravity(Gravity.RIGHT);
+        ticks.addView(bright, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         block.addView(ticks);
-        TextView rule = caption("画面亮于 " + Prefs.lightThreshold() + "% 时触发");
+        String number = Prefs.lightThreshold() + "%";
+        String raw = "画面亮于 " + number + " 时触发";
+        SpannableString ruleText = new SpannableString(raw);
+        int at = raw.indexOf(number);
+        ruleText.setSpan(new ForegroundColorSpan(color(R.color.ink_amber)), at, at + number.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        ruleText.setSpan(new StyleSpan(Typeface.BOLD), at, at + number.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        TextView rule = caption("");
+        rule.setText(ruleText);
         rule.setPadding(dp(16), 0, dp(16), dp(12));
         block.addView(rule);
         return block;
@@ -590,7 +681,6 @@ public final class RecordingSettingsActivity extends Activity {
         chip.setOnClickListener(click);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
-        lp.rightMargin = dp(8);
         chip.setLayoutParams(lp);
         return chip;
     }

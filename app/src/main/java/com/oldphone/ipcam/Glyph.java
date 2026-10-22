@@ -47,6 +47,7 @@ final class Glyph {
         put("aspect", "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"3\"/><path d=\"M7 12V9h3M17 12v3h-3\"/>");
         put("camera", "<path d=\"M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.6-2.2h4.8L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z\"/><circle cx=\"12\" cy=\"12.8\" r=\"3.3\"/>");
         put("person", "<circle cx=\"12\" cy=\"8\" r=\"3.2\"/><path d=\"M5.5 19.5c.8-3.2 3.2-5 6.5-5s5.7 1.8 6.5 5\"/>");
+        put("users", "<circle cx=\"9\" cy=\"8\" r=\"3.5\"/><path d=\"M3 20a6 6 0 0 1 12 0M15.5 4.6a3.5 3.5 0 0 1 0 6.8M17.5 14.2A6 6 0 0 1 21 20\"/>");
         put("rotate", "<path d=\"M19.5 12a7.5 7.5 0 1 1-2.2-5.3\"/><path d=\"M19.5 4v4h-4\"/>");
         put("copy", "<rect x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2.5\"/><path d=\"M5 15V6a2 2 0 0 1 2-2h8\"/>");
         put("home", "<path d=\"M3.5 11L12 4l8.5 7\"/><path d=\"M6 9.5V20h12V9.5\"/><circle cx=\"12\" cy=\"14.5\" r=\"2\"/>");

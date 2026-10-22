@@ -52,8 +52,27 @@ final class V22Ui {
     private View miniScene;
     private TextView deviceLine;
     private TextView previewClock;
+    private LinearLayout resChipBox;
+    private ImageView resMic;
     private TextView resChip;
+    private ImageView resChevron;
     private View resMenuView;
+    private LinearLayout homeRear;
+    private LinearLayout homeFront;
+    private View streamFace;
+    private Motion.Mark streamMark;
+    private String pageShot;
+    private LinearLayout streamLiveChip;
+    private ImageView streamLiveIcon;
+    private Motion.BreathDot streamLiveDot;
+    private TextView streamLiveLabel;
+    private LinearLayout addressBox;
+    private TextView rtspValue;
+    private TextView mjpegValue;
+    private TextView lightThValue;
+    private TextView lightMethodValue;
+    private TextView lightNowValue;
+    private TextView lightMet;
     private Motion.StatusPill leftPill;
     private Motion.StatusPill rightPill;
     private Motion.Plate glow;
@@ -72,10 +91,9 @@ final class V22Ui {
     private Motion.StatusPill miniPill;
     private TextView miniMeta;
     private TextView streamResValue;
-    private TextView addressBlock;
+    private TextView lightNote;
     private PillSwitch streamSwitch;
     private PillSwitch lightStreamSwitch;
-    private TextView lightSummary;
     private View lightSummaryBox;
     private TextView haHost;
     private View haBody;
@@ -88,8 +106,9 @@ final class V22Ui {
     V22Ui(MainActivity activity) { this.activity = activity; }
 
     void attach(ViewGroup content) {
-        String shot = activity.getIntent() == null ? null
+        pageShot = activity.getIntent() == null ? null
                 : activity.getIntent().getStringExtra(MainActivity.EXTRA_PAGE_SHOT);
+        String shot = pageShot;
         resMenu = "home-res".equals(shot);
         wantStream = "stream".equals(shot) || "stream-push".equals(shot)
                 || (activity.getIntent() != null && activity.getIntent().getBooleanExtra(MainActivity.EXTRA_STREAM_PAGE, false));
@@ -100,11 +119,6 @@ final class V22Ui {
         content.addView(stream, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         showStream(wantStream);
-        if ("stream-push".equals(shot)) {
-            stream.post(new Runnable() {
-                @Override public void run() { streamScroll.scrollTo(0, Math.max(0, streamPushTop - dp(8))); }
-            });
-        }
     }
 
     void showStream(boolean show) {
@@ -181,11 +195,17 @@ final class V22Ui {
             pill(rightPill, "录制中 · " + hms(recordElapsed()), R.color.pill_record, true);
         }
         resChip.setText((front ? "前置" : "后置") + " · " + res);
-        resChip.setCompoundDrawables(Prefs.microphoneEnabled()
-                ? Glyph.drawable(activity, "mic", 12, Color.WHITE, 2.4f) : null, null, null,
-                Glyph.drawable(activity, "down", 14, resMenu ? color(R.color.primary) : Color.WHITE, 2.4f));
-        resChip.setCompoundDrawablePadding(dp(4));
-        resChip.setTextColor(resMenu ? color(R.color.primary) : Color.WHITE);
+        resChip.setSingleLine(true);
+        int chipInk = resMenu ? color(R.color.primary) : Color.WHITE;
+        resChip.setTextColor(chipInk);
+        resMic.setVisibility(Prefs.microphoneEnabled() ? View.VISIBLE : View.GONE);
+        resMic.setImageDrawable(Glyph.drawable(activity, "mic", 12, Color.WHITE, 2.4f));
+        resChevron.setImageDrawable(Glyph.drawable(activity, "down", 14, chipInk, 2.4f));
+        GradientDrawable chipBg = round(resMenu ? 0xD9FF7A3D : 0x73000000, 14);
+        if (!resMenu) chipBg.setStroke(Math.max(1, dp(1)), 0x2EFFFFFF);
+        resChipBox.setBackground(chipBg);
+        if (homeRear != null) paintLens(homeRear, !front);
+        if (homeFront != null) paintLens(homeFront, front);
         resMenuView.setVisibility(resMenu ? View.VISIBLE : View.GONE);
         markResolution();
 
@@ -225,6 +245,7 @@ final class V22Ui {
         }
         if (miniMeta != null) miniMeta.setText((front ? "前置" : "后置") + "镜头 · " + Prefs.manualRotationDegrees() + "°");
         if (streamResValue != null) streamResValue.setText(res + " ›");
+        paintStreamChip(streaming, paused);
         refreshAddresses(streaming);
         suppress = true;
         if (streamSwitch != null) streamSwitch.setOn(streaming);
@@ -233,11 +254,11 @@ final class V22Ui {
         if (haAudioSwitch != null) haAudioSwitch.setOn(Prefs.haAudioEnabled());
         if (haNotifySwitch != null) haNotifySwitch.setOn(Prefs.haNotifyEnabled());
         suppress = false;
-        if (haHost != null) haHost.setText(Prefs.haEnabled() ? "● 已连接 · homeassistant.local" : "未接入");
+        if (haHost != null) haHost.setText(haStatus());
         if (haAudioCaption != null) haAudioCaption.setText(Prefs.haAudioEnabled()
                 ? "HA 通过 RTSP 接收声音" : "仅推送画面");
         if (haBody != null) haBody.setAlpha(Prefs.haEnabled() ? 1f : 0.45f);
-        if (lightSummary != null) lightSummary.setText(lightSummaryText(brightness));
+        paintLightSummary(brightness);
         if (lightSummaryBox != null) lightSummaryBox.setAlpha(Prefs.streamLightEnabled() ? 1f : 0.5f);
         if (entityId != null) entityId.setText("camera.afterglow_" + safeId());
         paintSegments(home);
@@ -256,8 +277,9 @@ final class V22Ui {
         if (value == null) return;
         String text = value.toString();
         Boolean on = null;
-        if ("后置镜头".equals(text) || "后置".equals(text)) on = !frontLens();
-        else if ("前置镜头".equals(text) || "前置".equals(text)) on = frontLens();
+        if ("后置镜头".equals(text) || "前置镜头".equals(text)) return;
+        if ("后置".equals(text)) on = !frontLens();
+        else if ("前置".equals(text)) on = frontLens();
         else if ("0°".equals(text)) on = Prefs.manualRotationDegrees() == 0;
         else if ("90°".equals(text)) on = Prefs.manualRotationDegrees() == 90;
         else if ("180°".equals(text)) on = Prefs.manualRotationDegrees() == 180;
@@ -284,7 +306,7 @@ final class V22Ui {
         page.addView(lensSegment());
         page.addView(stats());
         View streamControl = bigButton();
-        streamButton.setOnClickListener(new View.OnClickListener() {
+        streamFace.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22ToggleStream(); }
         });
         page.addView(streamControl);
@@ -320,13 +342,18 @@ final class V22Ui {
                     }
                 }));
         page.addView(picture);
-        TextView pushTitle = section("推流");
+        LinearLayout pushTitle = sectionBar("推流");
+        streamLiveChip = liveChip();
+        pushTitle.addView(streamLiveChip);
         page.addView(pushTitle);
         streamPushTop = 0;
         pushTitle.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override public void onLayoutChange(View v, int l, int t, int r, int b,
                                                  int ol, int ot, int or, int ob) {
                 streamPushTop = v.getTop();
+                if ("stream-push".equals(pageShot) && streamPushTop > 0) {
+                    streamScroll.scrollTo(0, Math.max(0, streamPushTop - dp(8)));
+                }
             }
         });
         LinearLayout push = card();
@@ -338,8 +365,8 @@ final class V22Ui {
                         activity.v22ToggleStream();
                     }
                 }));
-        addressBlock = caption("");
-        push.addView(addressBlock);
+        addressBox = addressBlock();
+        push.addView(addressBox);
         lightStreamSwitch = null;
         push.addView(switchRow("sun", R.color.ink_amber, R.color.tonal_amber, "光感控制推流",
                 "与录制共用亮度阈值。亮度不达标时的行为取决于感光方式。",
@@ -351,30 +378,21 @@ final class V22Ui {
                         refresh();
                     }
                 }));
-        lightSummaryBox = summaryBox();
-        lightSummary = caption("");
-        ((LinearLayout) lightSummaryBox).addView(lightSummary);
-        TextView go = text("去录制设置调整 ›", 14, color(R.color.ink_amber), true);
-        go.setGravity(Gravity.CENTER);
-        go.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { activity.v22OpenSettings(true); }
-        });
-        ((LinearLayout) lightSummaryBox).addView(gap(go, 0, 8, 0, 0));
+        lightSummaryBox = lightSummaryCard();
         push.addView(lightSummaryBox);
         page.addView(push);
         page.addView(section("Home Assistant 接入"));
         LinearLayout ha = card();
         haSwitch = null;
         ha.addView(switchRow("home", R.color.ink_purple, R.color.tonal_purple, "接入 Home Assistant",
-                "", Prefs.haEnabled(), false, new PillSwitch.Listener() {
+                Prefs.haEnabled() ? "● 已连接 · homeassistant.local" : "未接入", Prefs.haEnabled(), false,
+                new PillSwitch.Listener() {
                     @Override public void onChanged(boolean on) {
                         if (suppress) return;
                         Prefs.setBool(Prefs.KEY_HA, on);
                         refresh();
                     }
                 }));
-        haHost = caption("");
-        ha.addView(haHost);
         haBody = column();
         haAudioSwitch = null;
         ((LinearLayout) haBody).addView(switchRow("mic", R.color.ink_cyan, R.color.tonal_cyan, "推送音频到 HA",
@@ -395,13 +413,15 @@ final class V22Ui {
                     }
                 }));
         entityId = caption("");
-        TextView entityRow = text("实体 ID", 16, color(R.color.on_surface), true);
-        LinearLayout entity = row();
+        entityId.setTypeface(Typeface.MONOSPACE);
+        entityId.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        ImageView copyIcon = new ImageView(activity);
+        copyIcon.setImageDrawable(Glyph.drawable(activity, "copy", 18, color(R.color.on_surface_variant), 2f));
+        View entity = labeledRow("link", R.color.on_surface_variant, R.color.tonal_grey,
+                "实体 ID", entityId, copyIcon);
         entity.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { copy(entityId.getText().toString(), "已复制实体 ID"); }
         });
-        entity.addView(entityRow, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        entity.addView(entityId);
         ((LinearLayout) haBody).addView(entity);
         ha.addView(haBody);
         page.addView(ha);
@@ -462,20 +482,27 @@ final class V22Ui {
             frame.setClipToPadding(false);
             FrameLayout.LayoutParams glowLp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            int glowPad = dp(40);
+            int glowPad = Motion.glowPad(activity);
             glowLp.setMargins(-glowPad, -glowPad, -glowPad, -glowPad);
             frame.addView(glow, glowLp);
             leftPill = pillView();
             rightPill = pillView();
             previewClock = overlayText();
-            resChip = new TextView(activity);
-            resChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            resChip.setTypeface(Typeface.DEFAULT_BOLD);
-            resChip.setTextColor(Color.WHITE);
-            resChip.setPadding(dp(10), 0, dp(8), 0);
-            resChip.setGravity(Gravity.CENTER_VERTICAL);
-            resChip.setBackground(round(0xCC1A1614, 14));
-            resChip.setOnClickListener(new View.OnClickListener() {
+            resChipBox = row();
+            resChipBox.setGravity(Gravity.CENTER_VERTICAL);
+            resChipBox.setPadding(dp(10), 0, dp(6), 0);
+            resMic = new ImageView(activity);
+            resChip = text("", 12, Color.WHITE, true);
+            resChip.setSingleLine(true);
+            resChevron = new ImageView(activity);
+            resChipBox.addView(resMic, new LinearLayout.LayoutParams(dp(12), dp(12)));
+            LinearLayout.LayoutParams resText = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            resText.leftMargin = dp(4);
+            resText.rightMargin = dp(2);
+            resChipBox.addView(resChip, resText);
+            resChipBox.addView(resChevron, new LinearLayout.LayoutParams(dp(14), dp(14)));
+            resChipBox.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     resMenu = !resMenu;
                     refresh();
@@ -504,7 +531,7 @@ final class V22Ui {
             frame.addView(leftPill, left);
             frame.addView(rightPill, right);
             frame.addView(previewClock, clock);
-            frame.addView(resChip, chip);
+            frame.addView(resChipBox, chip);
             resMenuView = resolutionMenu();
             frame.addView(resMenuView, new FrameLayout.LayoutParams(
                     dp(220), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT));
@@ -567,12 +594,14 @@ final class V22Ui {
 
     private View lensSegment() {
         LinearLayout seg = segment();
-        seg.addView(segmentButton("camera", "后置镜头", !frontLens(), new View.OnClickListener() {
+        homeRear = lensButton("camera", "后置镜头", new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22SetLens(false); }
-        }), segmentLp());
-        seg.addView(segmentButton("person", "前置镜头", frontLens(), new View.OnClickListener() {
+        });
+        homeFront = lensButton("users", "前置镜头", new View.OnClickListener() {
             @Override public void onClick(View v) { activity.v22SetLens(true); }
-        }), segmentLp());
+        });
+        seg.addView(homeRear, segmentLp());
+        seg.addView(homeFront, segmentLp());
         return gap(seg, 0, 12, 0, 0);
     }
 
@@ -650,35 +679,249 @@ final class V22Ui {
     }
 
     private void refreshAddresses(boolean streaming) {
-        if (addressBlock == null) return;
+        if (addressBox == null) return;
         String ip = NetUtils.localIp();
-        String rtsp = "rtsp://" + ip + ":8554/live";
-        String mjpeg = "http://" + ip + ":8080/stream.mjpeg";
-        addressBlock.setText("两路同时推，按播放器选一个地址\nRTSP  " + rtsp + "\nMJPEG  " + mjpeg
-                + "\nMJPEG 不带声音，RTSP 和录像有声音");
-        addressBlock.setAlpha(streaming ? 1f : 0.45f);
-        addressBlock.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if (StreamControls.streaming()) copy(rtspLine(), "已复制推流地址");
-            }
-        });
+        rtspValue.setText("rtsp://" + ip + ":8554/live");
+        mjpegValue.setText("http://" + ip + ":8080/stream.mjpeg");
+        addressBox.setAlpha(streaming ? 1f : 0.45f);
+        enableCopy(addressBox, streaming);
+    }
+
+    private void enableCopy(View view, boolean enabled) {
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) enableCopy(group.getChildAt(i), enabled);
+        }
+        if ("copy".equals(view.getTag())) {
+            view.setEnabled(enabled);
+            view.setClickable(enabled);
+        }
     }
 
     private String rtspLine() {
         return "rtsp://" + NetUtils.localIp() + ":8554/live";
     }
 
-    private String lightSummaryText(int brightness) {
+    private void paintLightSummary(int brightness) {
+        if (lightThValue == null) return;
+        boolean sensor = LightPolicy.SENSOR.equals(Prefs.lightMethod());
         boolean met = LightPolicy.satisfied(brightness, Prefs.lightThreshold());
-        String method = LightPolicy.SENSOR.equals(Prefs.lightMethod()) ? "光线传感器" : "画面亮度";
-        String rule = LightPolicy.SENSOR.equals(Prefs.lightMethod())
+        lightThValue.setText("够亮才触发 · " + Prefs.lightThreshold() + "%");
+        lightMethodValue.setText(sensor ? "光线传感器" : "画面亮度");
+        lightNowValue.setText(brightness < 0 ? "—" : brightness + "%");
+        lightMet.setText(met ? "已满足" : "未满足");
+        lightMet.setTextColor(color(met ? R.color.ink_cyan : R.color.on_surface_variant));
+        lightMet.setBackground(round(color(met ? R.color.tonal_cyan : R.color.tonal_grey), 12));
+        lightNote.setText(sensor
                 ? "光线传感器模式：亮度不够时推流和录制都暂停"
-                : "画面亮度模式：亮度不够时推流继续，只暂停录制";
-        String now = brightness < 0 ? "—" : brightness + "%";
-        return "共用阈值    够亮才触发 · " + Prefs.lightThreshold() + "%\n"
-                + "感光方式    " + method + "\n"
-                + "当前亮度    " + now + "  " + (met ? "已满足" : "未满足") + "\n"
-                + rule;
+                : "画面亮度模式：亮度不够时推流继续，只暂停录制");
+    }
+
+    private void paintStreamChip(boolean streaming, boolean paused) {
+        if (streamLiveChip == null) return;
+        streamLiveChip.setVisibility(streaming ? View.VISIBLE : View.GONE);
+        if (!streaming) return;
+        int ink = color(paused ? R.color.ink_amber : R.color.ink_cyan);
+        streamLiveChip.setBackground(round(color(paused ? R.color.tonal_amber : R.color.tonal_cyan), 12));
+        streamLiveLabel.setText(paused ? "已暂停 · 亮度不足" : "推流中");
+        streamLiveLabel.setTextColor(ink);
+        streamLiveIcon.setVisibility(paused ? View.VISIBLE : View.GONE);
+        streamLiveDot.setVisibility(paused ? View.GONE : View.VISIBLE);
+        if (paused) {
+            streamLiveIcon.setImageDrawable(Glyph.drawable(activity, "sun", 12, ink, 2.6f));
+        } else {
+            streamLiveDot.color = color(R.color.secondary);
+            streamLiveDot.radiusDp = 3.5f;
+            streamLiveDot.breathe = !Motion.reduced(activity);
+            streamLiveDot.invalidate();
+        }
+    }
+
+    private CharSequence haStatus() {
+        if (!Prefs.haEnabled()) return "未接入";
+        String lead = "● 已连接";
+        SpannableString span = new SpannableString(lead + " · homeassistant.local");
+        span.setSpan(new ForegroundColorSpan(color(R.color.ink_cyan)), 0, lead.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        span.setSpan(new StyleSpan(Typeface.BOLD), 0, lead.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return span;
+    }
+
+    private LinearLayout sectionBar(String label) {
+        LinearLayout bar = row();
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(4), dp(20), dp(4), dp(8));
+        bar.addView(text(label, 20, color(R.color.on_surface), true), new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        return bar;
+    }
+
+    private LinearLayout liveChip() {
+        LinearLayout chip = row();
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(8), 0, dp(9), 0);
+        chip.setMinimumHeight(dp(24));
+        streamLiveIcon = new ImageView(activity);
+        streamLiveDot = new Motion.BreathDot(activity);
+        streamLiveDot.radiusDp = 3.5f;
+        streamLiveLabel = text("推流中", 12, color(R.color.ink_cyan), true);
+        chip.addView(streamLiveIcon, new LinearLayout.LayoutParams(dp(12), dp(12)));
+        chip.addView(streamLiveDot, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        streamLiveLabel.setPadding(dp(4), 0, 0, 0);
+        chip.addView(streamLiveLabel);
+        chip.setVisibility(View.GONE);
+        return chip;
+    }
+
+    private LinearLayout addressBlock() {
+        LinearLayout box = column();
+        box.setPadding(dp(16), 0, dp(16), dp(12));
+        TextView hint = caption("两路同时推，按播放器选一个地址");
+        hint.setPadding(0, dp(2), 0, dp(8));
+        box.addView(hint);
+        rtspValue = monoAddress();
+        mjpegValue = monoAddress();
+        box.addView(addressCard("RTSP", R.color.tonal_cyan, R.color.ink_cyan, rtspValue),
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(gap(addressCard("MJPEG", R.color.tonal_grey, R.color.on_surface_variant, mjpegValue),
+                0, 6, 0, 0));
+        LinearLayout note = row();
+        note.setGravity(Gravity.CENTER_VERTICAL);
+        note.setPadding(0, dp(8), 0, 0);
+        ImageView mic = new ImageView(activity);
+        mic.setImageDrawable(Glyph.drawable(activity, "mic", 14, color(R.color.on_surface_variant), 2f));
+        note.addView(mic, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        TextView words = caption("MJPEG 不带声音，RTSP 和录像有声音");
+        words.setPadding(dp(6), 0, 0, 0);
+        note.addView(words);
+        box.addView(note);
+        return box;
+    }
+
+    private TextView monoAddress() {
+        TextView view = text("", 12, color(R.color.on_surface), false);
+        view.setTypeface(Typeface.MONOSPACE);
+        return view;
+    }
+
+    private View addressCard(String tag, int well, int ink, final TextView value) {
+        LinearLayout row = row();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(46));
+        row.setPadding(dp(12), dp(6), dp(6), dp(6));
+        row.setBackground(round(color(R.color.surface_2), 14));
+        TextView badge = text(tag, 11, color(ink), true);
+        badge.setTypeface(Typeface.DEFAULT_BOLD);
+        badge.setPadding(dp(6), dp(1), dp(6), dp(1));
+        badge.setBackground(round(color(well), 6));
+        row.addView(badge);
+        LinearLayout.LayoutParams valueLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        valueLp.leftMargin = dp(8);
+        valueLp.rightMargin = dp(8);
+        row.addView(value, valueLp);
+        ImageView icon = new ImageView(activity);
+        icon.setImageDrawable(Glyph.drawable(activity, "copy", 16, color(R.color.ink_cyan), 2.2f));
+        FrameLayout button = new FrameLayout(activity);
+        button.setTag("copy");
+        button.setBackground(round(color(R.color.tonal_cyan), 17));
+        button.setContentDescription("复制" + tag + "地址");
+        button.addView(icon, new FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER));
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (!StreamControls.streaming()) return;
+                copy(value.getText().toString(), "已复制推流地址");
+            }
+        });
+        row.addView(button, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        return row;
+    }
+
+    private View lightSummaryCard() {
+        LinearLayout box = column();
+        box.setBackground(round(color(R.color.surface_2), 16));
+        box.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(16);
+        lp.rightMargin = dp(16);
+        lp.bottomMargin = dp(12);
+        box.setLayoutParams(lp);
+        lightThValue = text("", 14, color(R.color.on_surface), true);
+        lightMethodValue = text("", 14, color(R.color.on_surface), true);
+        lightNowValue = text("", 14, color(R.color.on_surface), true);
+        lightMet = text("已满足", 12, color(R.color.ink_cyan), true);
+        lightMet.setPadding(dp(8), dp(2), dp(8), dp(2));
+        box.addView(kv("共用阈值", lightThValue));
+        box.addView(kv("感光方式", lightMethodValue));
+        LinearLayout now = kv("当前亮度", lightNowValue);
+        LinearLayout.LayoutParams metLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        metLp.leftMargin = dp(6);
+        now.addView(lightMet, metLp);
+        box.addView(now);
+        View line = new View(activity);
+        line.setBackgroundColor(color(R.color.outline));
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        lineLp.topMargin = dp(6);
+        box.addView(line, lineLp);
+        LinearLayout note = row();
+        note.setGravity(Gravity.TOP);
+        note.setPadding(0, dp(8), 0, 0);
+        ImageView info = new ImageView(activity);
+        info.setImageDrawable(Glyph.drawable(activity, "info", 14, color(R.color.on_surface_variant), 2f));
+        note.addView(info, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        lightNote = caption("");
+        lightNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+        lightNote.setPadding(dp(6), 0, 0, 0);
+        note.addView(lightNote, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        box.addView(note);
+        TextView go = text("去录制设置调整 ›", 14, color(R.color.ink_amber), true);
+        go.setGravity(Gravity.CENTER);
+        go.setBackground(round(color(R.color.tonal_amber), 18));
+        go.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { activity.v22OpenSettings(true); }
+        });
+        LinearLayout.LayoutParams goLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(36));
+        goLp.topMargin = dp(10);
+        box.addView(go, goLp);
+        return box;
+    }
+
+    private LinearLayout kv(String key, TextView value) {
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setMinimumHeight(dp(30));
+        line.addView(text(key, 14, color(R.color.on_surface_variant), false), new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        line.addView(value);
+        return line;
+    }
+
+    private LinearLayout lensButton(final String icon, String label, View.OnClickListener click) {
+        LinearLayout button = row();
+        button.setGravity(Gravity.CENTER);
+        button.setMinimumHeight(dp(34));
+        ImageView image = new ImageView(activity);
+        image.setTag(icon);
+        TextView name = text(label, 14, color(R.color.on_surface_variant), false);
+        name.setPadding(dp(6), 0, 0, 0);
+        button.addView(image, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        button.addView(name);
+        button.setOnClickListener(click);
+        return button;
+    }
+
+    private void paintLens(LinearLayout button, boolean on) {
+        button.setBackground(on ? round(color(R.color.surface), 11) : null);
+        int ink = color(on ? R.color.on_surface : R.color.on_surface_variant);
+        ImageView image = (ImageView) button.getChildAt(0);
+        TextView name = (TextView) button.getChildAt(1);
+        name.setTextColor(ink);
+        name.setTypeface(on ? Typeface.create("sans-serif-medium", Typeface.NORMAL) : Typeface.DEFAULT);
+        image.setImageDrawable(Glyph.drawable(activity, String.valueOf(image.getTag()), 16, ink, 2f));
     }
 
     private void cycleResolution() {
@@ -752,16 +995,26 @@ final class V22Ui {
         wrap.setClipChildren(false);
         streamHalo = new Motion.Halo(activity);
         streamHalo.inset = extra;
+        FrameLayout face = new FrameLayout(activity);
+        streamFace = face;
+        LinearLayout group = row();
+        group.setGravity(Gravity.CENTER);
+        streamMark = new Motion.Mark(activity);
         streamButton = text("开始推流", 18, Color.WHITE, true);
-        streamButton.setGravity(Gravity.CENTER);
-        streamButton.setMinimumHeight(dp(60));
         streamButton.setTypeface(Typeface.DEFAULT_BOLD);
+        group.addView(streamMark, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        textLp.leftMargin = dp(10);
+        group.addView(streamButton, textLp);
+        face.addView(group, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
         wrap.addView(streamHalo, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(60));
         buttonLp.setMargins(extra, extra, extra, extra);
-        wrap.addView(streamButton, buttonLp);
+        wrap.addView(face, buttonLp);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(60) + extra * 2);
         lp.leftMargin = -extra;
@@ -776,27 +1029,25 @@ final class V22Ui {
         streamButton.setText(streaming ? "停止推流" : "开始推流");
         GradientDrawable shape = new GradientDrawable();
         shape.setCornerRadius(dp(30));
-        Motion.Mark mark = streamButton.getTag() instanceof Motion.Mark
-                ? (Motion.Mark) streamButton.getTag() : new Motion.Mark(activity);
-        streamButton.setTag(mark);
         if (!streaming) {
             shape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
             shape.setColors(new int[]{color(R.color.primary_button_top), color(R.color.primary_dark)});
             streamButton.setTextColor(Color.WHITE);
-            mark.color = Color.WHITE;
-            mark.square = false;
+            streamMark.color = Color.WHITE;
+            streamMark.square = false;
             streamHalo.mode = Motion.Halo.SHADOW;
         } else {
             shape.setColor(color(R.color.tonal_orange));
+            float strokeAlpha = paused || Motion.reduced(activity) ? 0.4f
+                    : 0.5f + 0.4f * Motion.glow(activity);
+            shape.setStroke(dp(2), (Math.round(strokeAlpha * 255f) << 24) | 0x00FF7A3D);
             streamButton.setTextColor(color(R.color.ink_orange));
-            mark.color = color(R.color.ink_orange);
-            mark.square = true;
-            streamHalo.mode = paused || Motion.reduced(activity) ? Motion.Halo.STATIC : Motion.Halo.ORANGE;
+            streamMark.color = color(R.color.ink_orange);
+            streamMark.square = true;
+            streamHalo.mode = paused || Motion.reduced(activity) ? Motion.Halo.NONE : Motion.Halo.ORANGE;
         }
-        mark.invalidate();
-        streamButton.setCompoundDrawablesWithIntrinsicBounds(markBitmap(mark), null, null, null);
-        streamButton.setCompoundDrawablePadding(dp(8));
-        streamButton.setBackground(shape);
+        streamMark.invalidate();
+        streamFace.setBackground(shape);
         streamHalo.invalidate();
     }
 
@@ -833,7 +1084,10 @@ final class V22Ui {
         toggle.setOnChanged(listener);
         if ("cast".equals(icon)) streamSwitch = toggle;
         if ("sun".equals(icon) && title.contains("推流")) lightStreamSwitch = toggle;
-        if ("home".equals(icon)) haSwitch = toggle;
+        if ("home".equals(icon)) {
+            haSwitch = toggle;
+            haHost = captionView;
+        }
         if ("推送音频到 HA".equals(title)) {
             haAudioSwitch = toggle;
             haAudioCaption = captionView;

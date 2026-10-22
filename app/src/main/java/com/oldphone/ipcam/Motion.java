@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -88,7 +89,10 @@ final class Motion {
         return value * context.getResources().getDisplayMetrics().density;
     }
 
-    /** Preview halo. Draws outside its content box, so the parent must not clip. */
+    /** Outer reach of the preview glow: spread 6dp + blur 26dp. */
+    static int glowPad(Context context) { return dp(context, 32); }
+
+    /** Preview halo. The view is larger than the preview by {@link #glowPad}. */
     static final class Plate extends View {
         boolean live;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -101,29 +105,23 @@ final class Motion {
         @Override protected void onDraw(Canvas canvas) {
             if (!live) return;
             float density = getResources().getDisplayMetrics().density;
-            float pad = 40f * density;
+            float pad = 32f * density;
             RectF box = new RectF(pad, pad, getWidth() - pad, getHeight() - pad);
-            if (box.width() <= 0f) return;
+            if (box.width() <= 0f || box.height() <= 0f) return;
             boolean still = reduced(getContext());
             float peak = still ? 0f : glow(getContext());
             float radius = 20f * density;
             if (!still) {
-                float blur = lerp(14f, 26f, peak) * density;
-                float spread = lerp(2f, 6f, peak) * density;
-                soft(canvas, paint, box, radius, ORANGE, blur, spread, lerp(0.22f, 0.50f, peak), false);
-                canvas.save();
-                canvas.clipRect(box);
-                soft(canvas, paint, box, radius, 0xFFFF8C50,
+                drawShadow(canvas, box, radius, ORANGE,
+                        lerp(14f, 26f, peak) * density, lerp(2f, 6f, peak) * density,
+                        lerp(0.22f, 0.50f, peak), 0f, false);
+                drawShadow(canvas, box, radius, 0xFFFF8C50,
                         lerp(18f, 26f, peak) * density, lerp(2f, 3f, peak) * density,
-                        lerp(0.18f, 0.30f, peak), true);
-                canvas.restore();
+                        lerp(0.18f, 0.30f, peak), 0f, true);
             }
-            paint.setMaskFilter(null);
             paint.setStyle(Paint.Style.STROKE);
-            float stroke = (still ? 2f : lerp(2f, 3f, peak)) * density;
-            float strokeAlpha = still ? 1f : lerp(0.55f, 0.95f, peak);
-            paint.setStrokeWidth(stroke);
-            paint.setColor(withAlpha(ORANGE, strokeAlpha));
+            paint.setStrokeWidth((still ? 2f : lerp(2f, 3f, peak)) * density);
+            paint.setColor(withAlpha(ORANGE, still ? 1f : lerp(0.55f, 0.95f, peak)));
             canvas.drawRoundRect(box, radius, radius, paint);
             if (!still && !ScreenSnapshot.freezeMotion) postInvalidateOnAnimation();
         }
@@ -147,33 +145,27 @@ final class Motion {
             float density = getResources().getDisplayMetrics().density;
             float pad = inset;
             RectF box = new RectF(pad, pad, getWidth() - pad, getHeight() - pad);
-            if (box.width() <= 0f) return;
+            if (box.width() <= 0f || box.height() <= 0f) return;
             float radius = box.height() / 2f;
             boolean still = mode == STATIC || reduced(getContext());
             float peak = still ? 0f : glow(getContext());
-            int color = mode == RED ? RED : ORANGE;
+            // Halo.ORANGE is the mode, not the paint color.
+            int ink = mode == RED ? Motion.RED : Motion.ORANGE;
             if (!still && mode == ORANGE) {
-                soft(canvas, paint, box, radius, color,
-                        lerp(12f, 26f, peak) * density, lerp(4f, 8f, peak) * density,
-                        lerp(0.18f, 0.40f, peak), false);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(2f * density);
-                paint.setColor(withAlpha(color, lerp(0.50f, 0.90f, peak)));
-                canvas.drawRoundRect(box, radius, radius, paint);
+                // Outer glow only. The 2dp stroke is inset on the button face.
+                drawShadow(canvas, box, radius, ink,
+                        lerp(12f, 26f, peak) * density, 0f,
+                        lerp(0.18f, 0.40f, peak), lerp(4f, 8f, peak) * density, false);
             } else if (!still && mode == RED) {
-                RectF dropped = new RectF(box);
-                dropped.offset(0f, lerp(6f, 10f, peak) * density);
-                soft(canvas, paint, dropped, radius, color,
-                        lerp(16f, 30f, peak) * density, 0f, lerp(0.30f, 0.55f, peak), false);
+                drawShadow(canvas, box, radius, ink,
+                        lerp(16f, 30f, peak) * density, 0f,
+                        lerp(0.30f, 0.55f, peak), lerp(6f, 10f, peak) * density, false);
             } else if (mode == SHADOW) {
-                RectF dropped = new RectF(box);
-                dropped.offset(0f, 8f * density);
-                soft(canvas, paint, dropped, radius, ORANGE, 22f * density, 0f, 0.42f, false);
+                drawShadow(canvas, box, radius, Motion.ORANGE, 22f * density, 0f, 0.42f, 8f * density, false);
             } else if (mode != RED) {
-                paint.setMaskFilter(null);
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(2f * density);
-                paint.setColor(withAlpha(color, 1f));
+                paint.setColor(withAlpha(ink, mode == STATIC ? 0.4f : 1f));
                 canvas.drawRoundRect(box, radius, radius, paint);
             }
             if (!still && !ScreenSnapshot.freezeMotion && mode != NONE) postInvalidateOnAnimation();
@@ -183,6 +175,7 @@ final class Motion {
     static final class BreathDot extends View {
         int color = ORANGE;
         boolean breathe;
+        float radiusDp = 5f;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         BreathDot(Context context) { super(context); }
@@ -192,7 +185,7 @@ final class Motion {
             float cx = getWidth() / 2f;
             float cy = getHeight() / 2f;
             float amount = breathe ? breath(getContext()) : 0f;
-            float radius = 5f * density * lerp(1f, 0.82f, amount);
+            float radius = radiusDp * density * lerp(1f, 0.82f, amount);
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(withAlpha(color, breathe ? lerp(1f, 0.4f, amount) : 1f));
             canvas.drawCircle(cx, cy, radius, paint);
@@ -202,7 +195,7 @@ final class Motion {
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeWidth(2f * density);
                 paint.setColor(withAlpha(color, lerp(0.7f, 0f, eased)));
-                canvas.drawCircle(cx, cy, 5f * density * lerp(0.6f, 1.6f, eased), paint);
+                canvas.drawCircle(cx, cy, radiusDp * density * lerp(0.6f, 1.6f, eased), paint);
             }
             if (breathe && !ScreenSnapshot.freezeMotion && !reduced(getContext())) postInvalidateOnAnimation();
         }
@@ -274,29 +267,40 @@ final class Motion {
         }
     }
 
-    /** Visible stand-in for a blurred shadow. Robolectric drops BlurMaskFilter. */
-    private static void soft(Canvas canvas, Paint paint, RectF box, float radius,
-                             int color, float blur, float spread, float alpha, boolean inward) {
-        paint.setMaskFilter(null);
+    /** Soft fringe inside spread+blur. Rings overlap slightly so the edge does not band. */
+    private static void drawShadow(Canvas canvas, RectF box, float radius, int color,
+                                   float blur, float spread, float alpha, float dy, boolean inset) {
+        if (alpha <= 0.004f || blur < 1f) return;
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setStyle(Paint.Style.STROKE);
-        int steps = 16;
-        float reach = Math.max(spread + blur, 1f);
-        paint.setStrokeWidth(Math.max(reach / steps * 2.6f, 1f));
-        for (int i = steps; i >= 0; i--) {
-            float dist = reach * i / steps;
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+        float reach = blur + spread;
+        float step = 2f;
+        paint.setStrokeWidth(3f);
+        int save = canvas.save();
+        if (inset) {
+            Path clip = new Path();
+            clip.addRoundRect(box, radius, radius, Path.Direction.CW);
+            canvas.clipPath(clip);
+        }
+        for (float dist = step * 0.5f; dist <= reach; dist += step) {
             float fade = 1f;
             if (dist > spread) {
-                float x = (dist - spread) / Math.max(blur, 1f);
-                fade = (float) Math.exp(-x * x * 2.4);
+                float x = (dist - spread) / blur;
+                fade = (float) Math.exp(-x * x * 2.2);
             }
-            paint.setColor(withAlpha(color, alpha * fade));
+            float strokeAlpha = alpha * fade;
+            if (strokeAlpha < 0.012f) continue;
+            paint.setColor(withAlpha(color, Math.min(0.9f, strokeAlpha)));
             RectF ring = new RectF(box);
-            float delta = inward ? dist : -dist;
-            ring.inset(delta, delta);
-            if (ring.width() <= 0f || ring.height() <= 0f) continue;
-            float rad = Math.max(0f, radius + (inward ? -dist : dist));
+            ring.inset(inset ? dist : -dist, inset ? dist : -dist);
+            if (!inset && dy != 0f) ring.offset(0f, dy);
+            if (ring.width() <= 1f || ring.height() <= 1f) continue;
+            float rad = Math.max(1f, radius + (inset ? -dist : dist));
             canvas.drawRoundRect(ring, rad, rad, paint);
         }
+        canvas.restoreToCount(save);
     }
 
     private static float lerp(float from, float to, float amount) {

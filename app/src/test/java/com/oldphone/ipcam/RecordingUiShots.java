@@ -49,7 +49,6 @@ public class RecordingUiShots {
     public void dark() throws Exception { capture("dark"); }
 
     private void capture(String theme) throws Exception {
-        org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.class, "MODEL", "旧手机 Pixel 3");
         home(theme, "home-idle", false, false, false);
         home(theme, "home-streaming", true, false, false);
         home(theme, "home-recording", false, true, false);
