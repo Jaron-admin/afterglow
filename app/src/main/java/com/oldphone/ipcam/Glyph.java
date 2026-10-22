@@ -9,6 +9,7 @@ import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -24,6 +25,9 @@ import java.util.Map;
  */
 final class Glyph {
     private static final Map<String, String> PATHS = new HashMap<String, String>();
+    private static final LruCache<String, Bitmap> CACHE = new LruCache<String, Bitmap>(2 * 1024 * 1024) {
+        @Override protected int sizeOf(String key, Bitmap value) { return value.getByteCount(); }
+    };
 
     static {
         put("back", "<path d=\"M15 5l-7 7 7 7\"/>");
@@ -87,9 +91,16 @@ final class Glyph {
 
     static Bitmap bitmap(Context context, String name, int sizeDp, int color, float stroke) {
         int size = Math.max(1, dp(context, sizeDp));
+        float strokePx = stroke * context.getResources().getDisplayMetrics().density * sizeDp / 24f;
+        // Rasterising a path is cheap once and wasteful at list-bind rate: every row used
+        // to rebuild its icons, and every thumbnail callback rebound every row.
+        String key = name + '|' + size + '|' + color + '|' + Math.round(strokePx * 10f);
+        Bitmap cached = CACHE.get(key);
+        if (cached != null) return cached;
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
-        draw(canvas, name, size, color, stroke * context.getResources().getDisplayMetrics().density * sizeDp / 24f);
+        draw(canvas, name, size, color, strokePx);
+        CACHE.put(key, bitmap);
         return bitmap;
     }
 

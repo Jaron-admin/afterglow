@@ -28,6 +28,7 @@ import android.text.Spanned;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -68,7 +69,10 @@ public final class RecordingsActivity extends Activity {
     private final List<Row> rows = new ArrayList<Row>();
     private final LinkedHashSet<String> selected = new LinkedHashSet<String>();
     private final ArrayList<String> pendingExport = new ArrayList<String>();
-    private final Map<String, Bitmap> thumbs = new HashMap<String, Bitmap>();
+    /** Bounded: a 200-clip library at full resolution would otherwise pin ~50MB. */
+    private final LruCache<String, Bitmap> thumbs = new LruCache<String, Bitmap>(16 * 1024 * 1024) {
+        @Override protected int sizeOf(String key, Bitmap value) { return value.getByteCount(); }
+    };
     private final Set<String> thumbBusy = new HashSet<String>();
     private final Set<String> thumbFailed = new HashSet<String>();
     private List<RecordingStore.Target> targets = new ArrayList<RecordingStore.Target>();
@@ -714,7 +718,7 @@ public final class RecordingsActivity extends Activity {
     }
 
     private void requestThumb(final RecordingStore.Clip clip) {
-        if (thumbs.containsKey(clip.id) || thumbFailed.contains(clip.id) || thumbBusy.contains(clip.id)) return;
+        if (thumbs.get(clip.id) != null || thumbFailed.contains(clip.id) || thumbBusy.contains(clip.id)) return;
         thumbBusy.add(clip.id);
         final String target = selectedTarget;
         final boolean cached = clip.hasThumbnail;
@@ -742,11 +746,26 @@ public final class RecordingsActivity extends Activity {
                         }
                         if (shown == null) thumbFailed.add(clip.id);
                         else thumbs.put(clip.id, rounded(shown));
-                        if (target.equals(selectedTarget)) adapter.notifyDataSetChanged();
+                        if (target.equals(selectedTarget)) refreshThumbRow(clip.id);
                     }
                 });
             }
         });
+    }
+
+    /**
+     * Swaps one row's thumbnail. Rebinding the whole list on every thumbnail made opening
+     * a 200-clip library O(n²) in glyph rasterising and shadow rasterising.
+     */
+    private void refreshThumbRow(String clipId) {
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View row = list.getChildAt(i);
+            if (row == null || !clipId.equals(row.getTag())) continue;
+            ImageView thumb = (ImageView) row.findViewById(R.id.recordingThumb);
+            Bitmap bitmap = thumbs.get(clipId);
+            if (thumb != null && bitmap != null) thumb.setImageBitmap(bitmap);
+            return;
+        }
     }
 
     private static Bitmap decode(File file) {
@@ -1018,6 +1037,7 @@ public final class RecordingsActivity extends Activity {
             View view = convert != null && convert.findViewById(R.id.recordingTime) != null ? convert
                     : getLayoutInflater().inflate(R.layout.item_recording_clip, parent, false);
             final RecordingStore.Clip clip = row.clip;
+            view.setTag(clip.id);
             TextView time = (TextView) view.findViewById(R.id.recordingTime);
             TextView meta = (TextView) view.findViewById(R.id.recordingMeta);
             LinearLayout tags = (LinearLayout) view.findViewById(R.id.recordingTags);
