@@ -20,9 +20,6 @@ jobs:
         with:
           category: integration
           comment: 'false'
-          # This public Android project has not selected an open-source license.
-          # Validate HACS custom-repository support, not default-catalog eligibility.
-          ignore: 'license'
   homeassistant:
     runs-on: ubuntu-latest
     steps:
