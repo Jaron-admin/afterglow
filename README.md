@@ -54,3 +54,13 @@
 ## 更多说明
 
 [HA 使用指南](homeassistant/README.md) · [开发、构建与测试](docs/development.md) · [HA 开发与维护](docs/home-assistant-development.md) · [版本记录](docs/CHANGELOG.md)
+
+## 许可证 / License
+
+Copyright (c) 2026 Jaron-admin.
+
+本仓库自有的 Android 应用、Home Assistant 集成及相关源码采用 GNU 通用公共许可证第 3 版，仅此版本（`GPL-3.0-only`）。完整条款见 [LICENSE](LICENSE)。修改与分发须遵守 GPLv3，包括适用的对应源码提供义务。
+
+The original Android application, Home Assistant integration, and related source code in this repository are licensed under the GNU General Public License, version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE) for the complete terms.
+
+第三方工具与依赖保留各自版权和许可；Gradle Wrapper 的 Apache-2.0 声明不受本次变更影响。See [third-party notices](THIRD_PARTY_NOTICES.md).

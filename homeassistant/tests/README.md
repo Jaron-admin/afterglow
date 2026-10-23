@@ -2,7 +2,7 @@
 
 `test_layout.py` checks the repository-root HACS layout, its metadata, the complete runtime file set, and the bundled brand icon. HACS installs `custom_components/afterglow`; `homeassistant/` contains documentation and tests only.
 
-The separate HACS CI job runs the official `hacs/action` against pushes and pull requests. It ignores only the license check: this public Android project has not selected an open-source license, and the job validates custom-repository support rather than default-catalog eligibility. Local layout tests do not replace that validator or imply inclusion in HACS's default store. The first release containing the new layout must be published before users select that release in HACS.
+The separate HACS CI job runs the official `hacs/action` against pushes and pull requests, including its license check. The repository's original code uses `GPL-3.0-only`; this validation does not imply default-catalog eligibility. Local layout tests do not replace that validator or imply inclusion in HACS's default store. The first release containing the new layout must be published before users select that release in HACS.
 
 From the repository root, with Python 3.12+:
 
